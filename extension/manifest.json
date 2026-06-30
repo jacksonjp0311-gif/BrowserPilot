@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "BrowserPilot",
+  "version": "0.1.10",
+  "description": "Let an AGNT agent understand and operate the browser tab you are already using.",
+  "action": {
+    "default_title": "BrowserPilot",
+    "default_icon": {}
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs",
+    "scripting",
+    "sidePanel",
+    "webNavigation",
+    "contextMenus"
+  ],
+  "optional_permissions": [
+    "notifications",
+    "downloads",
+    "clipboardRead",
+    "clipboardWrite",
+    "alarms",
+    "offscreen",
+    "tabCapture"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://localhost:3333/*",
+    "https://localhost:3333/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

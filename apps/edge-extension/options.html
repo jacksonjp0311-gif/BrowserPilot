@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BrowserPilot Options</title>
+  <style>
+    :root {
+      --color-red: #fe4e4e;
+      --color-blue: #12e0ff;
+      --color-pink: #e53d8f;
+      --color-ultra-dark-navy: #0b0b17;
+      --color-dark-navy: #10101f;
+      --color-lighter-0: rgba(255, 255, 255, 0.1);
+      --color-lighter-1: rgba(255, 255, 255, 0.2);
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      color: rgba(255,255,255,0.92);
+      font-family: ui-sans-serif, system-ui, Segoe UI, Roboto, Arial;
+      background: linear-gradient(180deg, var(--color-ultra-dark-navy), var(--color-dark-navy));
+    }
+
+    body {
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .card {
+      max-width: 720px;
+      margin: 0 auto;
+      border: 1px solid var(--color-lighter-0);
+      border-radius: 20px;
+      background: rgba(255,255,255,0.04);
+      padding: 20px;
+      box-sizing: border-box;
+      box-shadow: 0 18px 60px rgba(0,0,0,0.45);
+    }
+
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+    }
+
+    p {
+      margin: 0 0 16px 0;
+      color: rgba(255,255,255,0.68);
+      line-height: 1.5;
+      font-size: 13px;
+    }
+
+    label {
+      display:block;
+      font-size: 12px;
+      color: rgba(255,255,255,0.68);
+      margin-top: 14px;
+      margin-bottom: 6px;
+    }
+
+    input {
+      width: 100%;
+      background: rgba(0,0,0,0.22);
+      border: 1px solid var(--color-lighter-0);
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: rgba(255,255,255,0.90);
+      box-sizing: border-box;
+      outline: none;
+    }
+
+    .row { display:flex; gap: 12px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+
+    button {
+      border: 1px solid var(--color-lighter-0);
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.90);
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+    }
+
+    .accent {
+      background: linear-gradient(90deg, rgba(18,224,255,0.16), rgba(229,61,143,0.14));
+    }
+
+    .status { font-size: 12px; color: rgba(255,255,255,0.68); }
+
+    .err {
+      border: 1px solid rgba(254,78,78,0.35);
+      background: rgba(254,78,78,0.12);
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.92);
+      display:none;
+      margin-top: 12px;
+      white-space: pre-wrap;
+    }
+
+    code { color: var(--color-blue); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>BrowserPilot Options</h1>
+    <p>
+      BrowserPilot talks to your AGNT backend (usually <code>http://localhost:3333</code>) and uses your AGNT auth token.
+      If you have multiple AGNT instances, use <b>Detect from active tab</b> to ensure we connect to the same one as the app you’re viewing.
+    </p>
+
+    <label>AGNT Base URL</label>
+    <input id="baseUrl" placeholder="http://localhost:3333" />
+
+    <label>AGNT Auth Token (Bearer)</label>
+    <input id="token" placeholder="Paste token here" />
+
+    <div class="row">
+      <button id="detectBtn">Detect from active tab</button>
+      <button id="testBtn">Test connection</button>
+      <button id="saveBtn" class="accent">Save</button>
+      <div class="status" id="status"></div>
+    </div>
+
+    <div class="err" id="err"></div>
+
+    <div style="margin-top:16px; border-top: 1px solid var(--color-lighter-0); padding-top: 16px;">
+      <h1 style="font-size: 14px; margin: 0 0 8px 0; letter-spacing: 0.08em;">Permissions</h1>
+      <p>
+        Optional permissions unlock advanced “Jarvis” capabilities (notifications, clipboard, downloads, tab/screen capture, offscreen audio).
+        You can enable them incrementally.
+      </p>
+
+      <div class="row">
+        <button id="permRequestCore" class="accent">Enable Jarvis permissions</button>
+        <button id="permRefresh">Refresh status</button>
+        <div class="status" id="permStatus"></div>
+      </div>
+
+      <div class="err" id="permBox" style="display:block; margin-top:12px;"></div>
+    </div>
+
+    <p style="margin-top:16px;">
+      To get your token: open AGNT in the browser, open DevTools Console, and run:<br />
+      <code>localStorage.getItem('token')</code>
+    </p>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

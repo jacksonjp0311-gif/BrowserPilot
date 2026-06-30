@@ -1,0 +1,174 @@
+{
+  "name": "symtorch-toolkit",
+  "version": "0.1.0",
+  "description": "SymTorch tools for AGNT: evaluate trainable fuzzy-rule policies and return explainable decision traces.",
+  "author": "AGNT User",
+  "icon": "brain",
+  "tools": [
+    {
+      "type": "symtorch-rule-evaluate",
+      "entryPoint": "./symtorch-rule-evaluate.js",
+      "schema": {
+        "title": "SymTorch Rule Evaluate",
+        "category": "utility",
+        "type": "symtorch-rule-evaluate",
+        "icon": "brain",
+        "description": "Evaluate a SymTorch fuzzy rule program against entity facts and return a decision + explanation trace snapshot.",
+        "parameters": {
+          "symtorchRoot": {
+            "type": "string",
+            "inputType": "text",
+            "description": "Absolute path to the SymTorch repo root (must be built: packages/*/dist).",
+            "default": "C:\\Users\\jacks\\OneDrive\\Desktop\\SymTorch",
+            "required": false
+          },
+          "ruleText": {
+            "type": "string",
+            "inputType": "textarea",
+            "description": "Rule program text, e.g. escalate(X) :- high_risk(X), not approved(X).",
+            "required": true
+          },
+          "entityId": {
+            "type": "string",
+            "inputType": "text",
+            "description": "Entity identifier to evaluate.",
+            "default": "entity-1",
+            "required": false
+          },
+          "factsJson": {
+            "type": "string",
+            "inputType": "textarea",
+            "description": "Entity facts as JSON object. Example: { \"high_risk\": 0.9, \"approved\": 0.1 }",
+            "required": true
+          },
+          "threshold": {
+            "type": "number",
+            "inputType": "number",
+            "description": "Acceptance threshold for the agent.",
+            "default": 0.5,
+            "required": false
+          },
+          "predicateNames": {
+            "type": "string",
+            "inputType": "textarea",
+            "description": "Optional. One predicate name per line (e.g. high_risk\\napproved). If omitted, predicates are inferred from the rule text.",
+            "required": false
+          },
+          "createdAtIso": {
+            "type": "string",
+            "inputType": "text",
+            "description": "Optional ISO timestamp for snapshot determinism.",
+            "required": false
+          }
+        },
+        "outputs": {
+          "decision": {
+            "type": "object",
+            "description": "SymTorch agent decision (JSON-safe)."
+          },
+          "traceSnapshot": {
+            "type": "object",
+            "description": "Versioned decision trace snapshot (symtorch.decisionTraceSnapshot.v1)."
+          },
+          "predicates": {
+            "type": "object",
+            "description": "Predicates used during evaluation."
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Whether evaluation succeeded."
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if failed."
+          }
+        }
+      }
+    },
+    {
+      "type": "symtorch-policy-bundle-evaluate",
+      "entryPoint": "./symtorch-policy-bundle-evaluate.js",
+      "schema": {
+        "title": "SymTorch Policy Bundle Evaluate",
+        "category": "utility",
+        "type": "symtorch-policy-bundle-evaluate",
+        "icon": "shield",
+        "description": "Load + (optionally) admit a SymTorch policy bundle (symtorch.policyBundle.v1) and evaluate it against entity facts; returns decision + trace snapshot.",
+        "parameters": {
+          "symtorchRoot": {
+            "type": "string",
+            "inputType": "text",
+            "description": "Absolute path to the SymTorch repo root (must be built: packages/*/dist).",
+            "default": "C:\\Users\\jacks\\OneDrive\\Desktop\\SymTorch",
+            "required": false
+          },
+          "policyBundleJson": {
+            "type": "string",
+            "inputType": "textarea",
+            "description": "Serialized policy bundle JSON (symtorch.policyBundle.v1).",
+            "required": true
+          },
+          "entityId": {
+            "type": "string",
+            "inputType": "text",
+            "description": "Entity identifier to evaluate.",
+            "default": "entity-1",
+            "required": false
+          },
+          "factsJson": {
+            "type": "string",
+            "inputType": "textarea",
+            "description": "Entity facts as JSON object. Example: { \"high_risk\": 0.9, \"approved\": 0.1 }",
+            "required": true
+          },
+          "threshold": {
+            "type": "number",
+            "inputType": "number",
+            "description": "Acceptance threshold for the agent.",
+            "default": 0.5,
+            "required": false
+          },
+          "runAdmission": {
+            "type": "boolean",
+            "inputType": "checkbox",
+            "description": "If true, run symtorch.policyAdmission.v1 checks before evaluation.",
+            "default": true,
+            "required": false
+          },
+          "createdAtIso": {
+            "type": "string",
+            "inputType": "text",
+            "description": "Optional ISO timestamp for snapshot determinism.",
+            "required": false
+          }
+        },
+        "outputs": {
+          "decision": {
+            "type": "object",
+            "description": "SymTorch agent decision (JSON-safe)."
+          },
+          "traceSnapshot": {
+            "type": "object",
+            "description": "Versioned decision trace snapshot (symtorch.decisionTraceSnapshot.v1)."
+          },
+          "admission": {
+            "type": "object",
+            "description": "Admission report (symtorch.policyAdmission.v1) if runAdmission is true."
+          },
+          "bundleMeta": {
+            "type": "object",
+            "description": "Basic bundle metadata (name, version, hash)."
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Whether evaluation succeeded."
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if failed."
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,411 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BrowserPilot for Chrome</title>
+  <style>
+    /* Mirror AGNT core variable names (copied from frontend/src/styles/base/_variables.css) */
+    :root {
+      --color-red: #fe4e4e;
+      --color-orange: #ff9500;
+      --color-yellow: #ffd700;
+      --color-green: #19ef83;
+      --color-blue: #12e0ff;
+      --color-indigo: #7d3de5;
+      --color-violet: #d13de5;
+      --color-pink: #e53d8f;
+
+      --color-black-navy: #070710;
+      --color-ultra-dark-navy: #0b0b17;
+      --color-dark-navy: #10101f;
+      --color-navy: #131322;
+      --color-dull-navy: #1f1f2f;
+      --color-duller-navy: #3e405a;
+      --color-med-navy: #7f8193;
+      --color-light-med-navy: #d1d1db;
+      --color-light-navy: #d9d9d9;
+      --color-bright-light-navy: #ebebeb;
+      --color-ultra-light-navy: #fafafa;
+      --color-dull-white: #f7f7f7;
+      --color-white: #f1f0f5;
+
+      --color-lighter-0: rgba(255, 255, 255, 0.1);
+      --color-lighter-1: rgba(255, 255, 255, 0.2);
+      --color-lighter-2: rgba(255, 255, 255, 0.4);
+      --color-lighter-3: rgba(255, 255, 255, 0.8);
+
+      --color-darker-0: rgba(0, 0, 0, 0.1);
+      --color-darker-1: rgba(0, 0, 0, 0.2);
+      --color-darker-2: rgba(0, 0, 0, 0.4);
+      --color-darker-3: rgba(0, 0, 0, 0.8);
+
+      --base-font-size: 16px;
+      --font-size-xs: calc(var(--base-font-size) * 0.75);
+      --font-size-sm: calc(var(--base-font-size) * 0.875);
+      --font-size-md: var(--base-font-size);
+
+      --font-weight-medium: 500;
+      --font-weight-semibold: 600;
+      --font-weight-bold: 700;
+
+      --spacing-sm: 8px;
+      --spacing-md: 16px;
+      --spacing-lg: 24px;
+
+      --border-radius-md: 8px;
+      --border-radius-lg: 16px;
+
+      --user-message-bg: var(--color-darker-1);
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: linear-gradient(180deg, var(--color-ultra-dark-navy), var(--color-dark-navy));
+      color: rgba(255,255,255,0.92);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    .wrap {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100%;
+      gap: 12px;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+
+    .panel {
+      border: 1px solid var(--color-lighter-0);
+      border-radius: var(--border-radius-lg);
+      background: rgba(255,255,255,0.04);
+      box-shadow: 0 18px 60px rgba(0,0,0,0.45);
+    }
+
+    .top {
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .brand h1 {
+      font-size: 12px;
+      margin: 0;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.86);
+    }
+
+    .pill {
+      font-size: 11px;
+      color: rgba(255,255,255,0.68);
+      border: 1px solid var(--color-lighter-0);
+      background: rgba(0,0,0,0.22);
+      padding: 6px 10px;
+      border-radius: 999px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .row2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      align-items: center;
+    }
+
+    button {
+      border: 1px solid var(--color-lighter-0);
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.90);
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: transform 120ms ease, background 200ms ease, border-color 200ms ease;
+      user-select: none;
+    }
+
+    button:hover { transform: translateY(-1px); background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.16); }
+    button:active { transform: translateY(0px) scale(0.99); }
+
+    .btnAccent {
+      background: linear-gradient(90deg, rgba(18,224,255,0.16), rgba(229,61,143,0.14));
+    }
+
+    .btnStop {
+      border-color: rgba(254, 78, 78, 0.30);
+      background: rgba(254, 78, 78, 0.12);
+      color: rgba(255,255,255,0.92);
+    }
+
+    .btnModeOn {
+      border-color: rgba(25, 239, 131, 0.30);
+      background: rgba(25, 239, 131, 0.10);
+      color: rgba(255,255,255,0.92);
+    }
+
+    .btnModeOff {
+      border-color: rgba(209, 209, 219, 0.20);
+      background: rgba(0,0,0,0.18);
+      color: rgba(255,255,255,0.78);
+    }
+
+    .btnStop:hover { background: rgba(254, 78, 78, 0.18); border-color: rgba(254, 78, 78, 0.40); }
+    .btnStop:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+    .hint {
+      font-size: 11px;
+      color: rgba(255,255,255,0.62);
+      line-height: 1.4;
+    }
+
+    .error {
+      border: 1px solid rgba(254, 78, 78, 0.35);
+      background: rgba(254, 78, 78, 0.12);
+      color: rgba(255,255,255,0.92);
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-size: 12px;
+    }
+
+    /* Searchable dropdown (combobox) */
+    .combo {
+      position: relative;
+      display: grid;
+      gap: 6px;
+    }
+
+    .comboInput {
+      width: 100%;
+      background: rgba(0,0,0,0.22);
+      border: 1px solid var(--color-lighter-0);
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: rgba(255,255,255,0.90);
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    .comboList {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      max-height: 280px;
+      overflow: auto;
+      border: 1px solid var(--color-lighter-0);
+      background: rgba(16,16,31,0.96);
+      border-radius: 14px;
+      box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+      display: none;
+      z-index: 99999;
+    }
+
+    .comboList.open { display: block; }
+
+    .comboItem {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      cursor: pointer;
+      display: grid;
+      gap: 2px;
+    }
+
+    .comboItem:hover { background: rgba(255,255,255,0.06); }
+
+    .comboItemTitle { font-size: 12px; color: rgba(255,255,255,0.90); }
+    .comboItemSub { font-size: 11px; color: rgba(255,255,255,0.60); }
+
+    .comboEmpty {
+      padding: 10px 12px;
+      color: rgba(255,255,255,0.60);
+      font-size: 12px;
+    }
+
+    .chat {
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: 1fr;
+    }
+
+    .msgs {
+      padding: 12px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .msg {
+      border: 1px solid var(--color-lighter-0);
+      border-radius: 14px;
+      padding: 8px 10px;
+      background: rgba(0,0,0,0.18);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-width: 86%;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .msg.user {
+      align-self: flex-end;
+      border-color: rgba(18,224,255,0.22);
+      background: rgba(18,224,255,0.06);
+    }
+
+    .msg.assistant {
+      align-self: flex-start;
+      border-color: rgba(229,61,143,0.22);
+      background: rgba(229,61,143,0.06);
+    }
+
+    .msg.syncing {
+      border-color: rgba(25,239,131,0.25);
+      background: rgba(25,239,131,0.06);
+      box-shadow: 0 0 0 1px rgba(25,239,131,0.14), 0 0 24px rgba(25,239,131,0.12);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .msg.syncing::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(25,239,131,0.14), transparent);
+      transform: translateX(-100%);
+      animation: agntSweep 1.1s linear infinite;
+    }
+
+    @keyframes agntSweep {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .statusDot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.25);
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.12);
+    }
+
+    .pill.linked .statusDot {
+      background: var(--color-green);
+      box-shadow: 0 0 0 1px rgba(25,239,131,0.30), 0 0 18px rgba(25,239,131,0.22);
+    }
+
+    .pill.syncing .statusDot {
+      background: var(--color-green);
+      box-shadow: 0 0 0 1px rgba(25,239,131,0.30), 0 0 18px rgba(25,239,131,0.30);
+      animation: dotPulse 900ms ease-in-out infinite;
+    }
+
+    @keyframes dotPulse {
+      0%, 100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.25); opacity: 1; }
+    }
+
+    .meta {
+      font-size: 11px;
+      color: rgba(255,255,255,0.60);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .composer {
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+      background: rgba(0,0,0,0.16);
+      border: 1px solid var(--color-lighter-0);
+      border-radius: var(--border-radius-lg);
+    }
+
+    textarea {
+      width: 100%;
+      background: rgba(0,0,0,0.22);
+      border: 1px solid var(--color-lighter-0);
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: rgba(255,255,255,0.90);
+      outline: none;
+      box-sizing: border-box;
+      resize: vertical;
+      min-height: 72px;
+      max-height: 180px;
+    }
+
+    a { color: var(--color-blue); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel top">
+      <div class="brand">
+        <h1>BrowserPilot</h1>
+        <div class="pill" id="connPill"><span class="statusDot" id="statusDot"></span><span id="connText">connecting…</span></div>
+      </div>
+
+      <div class="row">
+        <div class="combo">
+          <input id="agentSearch" class="comboInput" placeholder="Search agents…" autocomplete="off" />
+          <div id="agentList" class="comboList"></div>
+        </div>
+        <button id="refreshBtn">Refresh</button>
+      </div>
+
+      <div class="row2">
+        <button id="captureBtn">Capture page</button>
+        <button id="actBtn" title="When ON, the agent can emit AGNT_EXEC commands to operate the current tab.">Jarvis: ON</button>
+        <button id="openAgntBtn" class="btnAccent">Open AGNT Chat</button>
+      </div>
+
+      <div class="hint" id="contextHint">Click the floating “AGNT” button on any page to capture URL + selection. “Capture page” also grabs bounded page text. Toggle Control: OFF / Jarvis / Edge Copilot (SymTorch-gated).</div>
+      <div id="errorBox" class="error" style="display:none"></div>
+    </div>
+
+    <div class="panel chat">
+      <div class="msgs" id="msgs"></div>
+    </div>
+
+    <div class="composer">
+      <textarea id="input" placeholder="Ask your agent… (Shift+Enter = newline)"></textarea>
+      <div class="row">
+        <button id="suggestBtn">Suggestions</button>
+        <button id="sendBtn" class="btnAccent">Send</button>
+      </div>
+      <div class="row" id="stopRow" style="display:none">
+        <button id="stopBtn" class="btnStop">Stop</button>
+        <div class="hint" style="text-align:right">Stops streaming for the current reply.</div>
+      </div>
+      <div class="hint">
+        Configure AGNT base URL + token in <a href="options.html" target="_blank" rel="noopener">Options</a>.
+      </div>
+    </div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

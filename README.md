@@ -208,7 +208,4 @@ See: `docs/security-model.md`.
 
 ---
 
-If you want, I can also:
-- add a visual execution timeline panel,
-- add policy bundle switching,
-- or ship a “safe-by-default distribution mode” (no broad host perms until enabled).
+Free Your Agents. Let them in The Web. 

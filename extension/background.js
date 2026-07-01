@@ -76,7 +76,7 @@ function parseSSEAssistantFromText(raw) {
   return lastAccumulated;
 }
 
-async function agntAgentChat(agentId, { message, context = {} }, { requestId, streamToExtension = false, signal } = {}) {
+async function agntAgentChat(agentId, { message, context = {}, history = [] }, { requestId, streamToExtension = false, signal } = {}) {
   const { agntBaseUrl, agntToken } = await getSettings();
   const url = agntBaseUrl.replace(/\/$/, '') + `/api/agents/${encodeURIComponent(agentId)}/chat`;
 
@@ -92,7 +92,7 @@ async function agntAgentChat(agentId, { message, context = {} }, { requestId, st
       // we do NOT want the backend to ever expose browser automation tools
       // (ai-browser-use) to this chat surface. The side panel drives the active
       // Edge tab via AGNT_EXEC instead.
-      body: JSON.stringify({ message, context, enabledTools: [] }),
+      body: JSON.stringify({ message, history, context, enabledTools: [] }),
       signal
     });
   } catch (e) {
@@ -278,7 +278,7 @@ async function ensureDefaultAgent() {
   return { created: true, agents: next };
 }
 
-async function openOrFocusAgntChatTab() {
+async function openOrFocusAgntChatTab({ activate = false } = {}) {
   const { agntBaseUrl } = await getSettings();
   const base = (agntBaseUrl || 'http://localhost:3333').replace(/\/$/, '');
   const chatUrl = base + '/chat';
@@ -287,12 +287,14 @@ async function openOrFocusAgntChatTab() {
   const existing = tabs.find((t) => typeof t.url === 'string' && t.url.startsWith(chatUrl));
 
   if (existing?.id) {
-    await chrome.tabs.update(existing.id, { active: true });
-    if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
+    if (activate) {
+      await chrome.tabs.update(existing.id, { active: true });
+      if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
+    }
     return existing.id;
   }
 
-  const created = await chrome.tabs.create({ url: chatUrl, active: true });
+  const created = await chrome.tabs.create({ url: chatUrl, active: activate });
   return created.id;
 }
 
@@ -410,7 +412,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // This makes the sidebar "feel" like the same chat surface (same renderer, same theme, same
       // persistent conversation/memory) instead of duplicating chat logic in the extension.
       if (msg?.type === 'AGNT_OPEN_CHAT_AND_SEND') {
-        const chatTabId = await openOrFocusAgntChatTab();
+        const chatTabId = await openOrFocusAgntChatTab({ activate: Boolean(msg.activate) });
         if (typeof chatTabId !== 'number') throw new Error('Unable to open AGNT chat tab');
         await waitForTabComplete(chatTabId);
 
@@ -421,6 +423,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           message: msg.message,
           agentId: msg.agentId || null,
           agentName: msg.agentName || null,
+          bridgeConversationKey: msg.bridgeConversationKey || (msg.agentId ? `browserpilot-agent-${msg.agentId}` : 'browserpilot-default'),
+          bridgeConversationTitle: msg.bridgeConversationTitle || 'BrowserPilot',
           pageContext: msg.pageContext || null,
           at: new Date().toISOString(),
         };
@@ -439,8 +443,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const agentId = msg.agentId;
         const message = msg.message;
         const context = msg.context || {};
+        const history = Array.isArray(msg.history) ? msg.history : [];
         const pageContext = msg.pageContext || null;
         const agentName = msg.agentName || null;
+        const bridgeConversationKey = msg.bridgeConversationKey || `browserpilot-agent-${agentId}`;
+        const bridgeConversationTitle = msg.bridgeConversationTitle || `BrowserPilot - ${agentName || 'Edge Tab Operator'}`;
 
         if (!agentId) throw new Error('agentId is required');
         if (!message || !String(message).trim()) throw new Error('message is required');
@@ -448,7 +455,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // Mirror best-effort (do not block agent response on this)
         const mirrorPromise = (async () => {
           try {
-            const chatTabId = await openOrFocusAgntChatTab();
+            const chatTabId = await openOrFocusAgntChatTab({ activate: false });
             if (typeof chatTabId !== 'number') return null;
             await waitForTabComplete(chatTabId);
 
@@ -459,6 +466,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               message,
               agentId,
               agentName,
+              bridgeConversationKey,
+              bridgeConversationTitle,
               pageContext,
               at: new Date().toISOString(),
             };
@@ -480,7 +489,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try {
           response = await agntAgentChat(
             agentId,
-            { message, context },
+            { message, history, context },
             { requestId: rid, streamToExtension: true, signal: controller?.signal }
           );
         } finally {

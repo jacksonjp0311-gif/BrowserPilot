@@ -34,6 +34,54 @@ The repo includes:
 
 ---
 
+## New AGNT user checklist ✅ (distribution confidence)
+
+Use this when someone installs BrowserPilot on a fresh machine.
+
+1. **Run AGNT** (default: `http://localhost:3333`).
+2. **Install SymTorch toolkit into AGNT** (Edge Copilot mode):
+
+   Copy:
+
+   ```text
+   BrowserPilot/agnt-plugins/symtorch-toolkit
+   →
+   <agnt-evo>\backend\plugins\dev\symtorch-toolkit
+   ```
+
+   Then in AGNT:
+   - restart AGNT, or
+   - `POST /api/plugins/reload`
+
+3. **Verify SymTorch tools are visible** (quick check):
+
+   - Open AGNT → Workflows → tools list, or
+   - run BrowserPilot smoke test: `npm run smoke:edgecopilot`
+
+4. **Get token from AGNT UI**:
+
+   In DevTools Console:
+
+   ```js
+   localStorage.getItem("token")
+   ```
+
+5. **Configure BrowserPilot Options**:
+   - paste Base URL + token
+   - click **Test connection** → **Save**
+
+6. **Load the extension**:
+   - Edge: `edge://extensions` → Load unpacked → `apps\edge-extension`
+   - Chrome: `chrome://extensions` → Load unpacked → `apps\chrome-extension`
+
+7. **Mint test**:
+   - open any page → click floating **AGNT**
+   - toggle **Edge Copilot: ON**
+   - ask: “scroll down 600px” (should allow)
+   - ask: “close this tab” (should block or require low-risk alternative)
+
+---
+
 ## Quickstart ⚡
 
 ### 0) Requirements
@@ -209,3 +257,9 @@ See: `docs/security-model.md`.
 ---
 
 Free Your Agents. Let them in The Web. 
+
+
+### Troubleshooting
+
+- **Edge Copilot blocks everything immediately**: ensure the SymTorch toolkit plugin is installed into AGNT and AGNT was restarted. Then run `npm run smoke:edgecopilot`.
+- **SymTorch admission failed**: BrowserPilot defaults to `runAdmission: false` for local installs. Only enable admission when SymTorch secrets are configured.

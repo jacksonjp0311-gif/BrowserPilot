@@ -18,6 +18,7 @@ const els = {
 };
 
 const STATE_KEY = 'agnt_sidepanel_state_v1';
+const BRIDGE_CONVERSATION_KEY = 'browserpilot-edge-tab-operator';
 
 const pending = new Map(); // requestId -> { wrap, body, idx }
 
@@ -450,6 +451,11 @@ async function maybeExecuteJarvisFromText(text) {
 async function sendMessage(text) {
   if (!selectedAgentId) throw new Error('No agent selected.');
 
+  const history = chatLog
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && !m.streaming)
+    .map((m) => ({ role: m.role, content: String(m.content || '') }))
+    .slice(-40);
+
   // User bubble
   pushMsg('user', text);
 
@@ -470,8 +476,11 @@ async function sendMessage(text) {
     type: 'AGNT_SEND_AND_MIRROR',
     requestId,
     message: text,
+    history,
     agentId: selectedAgentId,
     agentName: selectedAgentName,
+    bridgeConversationKey: BRIDGE_CONVERSATION_KEY,
+    bridgeConversationTitle: 'BrowserPilot - Edge Tab Operator',
     context,
     pageContext,
   });

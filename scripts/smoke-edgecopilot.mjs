@@ -16,6 +16,7 @@ function getArg(name) {
 
 const base = (getArg('--base') || process.env.AGNT_BASE_URL || 'http://localhost:3333').replace(/\/$/, '');
 const token = getArg('--token') || process.env.AGNT_TOKEN || process.env.AGNT_AUTH_TOKEN || '';
+const symtorchRoot = getArg('--symtorch-root') || process.env.SYMTORCH_ROOT || 'C:/Users/jacks/OneDrive/Desktop/SymTorch';
 
 async function fetchJSON(path, opts = {}) {
   const url = base + path;
@@ -43,11 +44,12 @@ function ok(msg, extra) {
 console.log('BrowserPilot Edge Copilot smoke');
 console.log('  base:', base);
 console.log('  token:', token ? '(provided)' : '(missing)');
+console.log('  symtorchRoot:', symtorchRoot);
 
 // 1) Plugin listing (no-auth endpoint)
 const plugins = await fetchJSON('/api/plugins/installed');
 if (!plugins.ok) fail('GET /api/plugins/installed failed', plugins);
-else ok('plugins installed fetched', { total: plugins.json?.stats?.total, active: plugins.json?.stats?.active });
+else ok('plugins installed fetched', { totalPlugins: plugins.json?.stats?.totalPlugins, totalTools: plugins.json?.stats?.totalTools });
 
 // 2) Orchestrator tools should include symtorch-policy-bundle-evaluate
 const orch = await fetchJSON('/api/tools/orchestrator-tools');
@@ -84,7 +86,7 @@ if (!token) {
     method: 'POST',
     body: JSON.stringify({
       args: {
-        symtorchRoot: 'C:/Users/jacks/OneDrive/Desktop/SymTorch',
+        symtorchRoot,
         policyBundleJson: JSON.stringify(bundle),
         factsJson: JSON.stringify({ risk: 0.2 }),
         entityId: 'smoke-1',

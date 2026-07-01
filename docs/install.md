@@ -105,3 +105,21 @@ Artifacts:
 dist\browser-pilot-edge-extension.zip
 dist\browser-pilot-chrome-extension.zip
 ```
+
+
+---
+
+## Distribution confidence ✅
+
+If you’re handing this to another AGNT user, have them run:
+
+```powershell
+npm run validate
+npm run smoke:edgecopilot
+npm run package:all
+```
+
+If the smoke test fails, the most common causes are:
+
+- AGNT not restarted after installing the SymTorch toolkit
+- incorrect token pasted into extension Options

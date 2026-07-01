@@ -30,6 +30,25 @@ for (const [label, extensionDir] of targets) {
     }
   }
 
+  const backgroundText = fs.readFileSync(path.join(extensionDir, 'background.js'), 'utf8');
+  if (backgroundText.includes('./policyBundles.js')) {
+    const policyBundlePath = path.join(extensionDir, 'policyBundles.js');
+    if (!fs.existsSync(policyBundlePath)) {
+      throw new Error(`[${label}] background.js imports policyBundles.js, but the file is missing`);
+    }
+  }
+
+  const iconRefs = [
+    ...Object.values(manifest.icons || {}),
+    ...Object.values(manifest.action?.default_icon || {}).filter((v) => typeof v === 'string')
+  ];
+  for (const rel of iconRefs) {
+    const iconPath = path.join(extensionDir, rel);
+    if (!fs.existsSync(iconPath)) {
+      throw new Error(`[${label}] manifest references missing icon: ${rel}`);
+    }
+  }
+
 
   // --- Runtime sanity checks (lightweight) ---
   // Structural checks can pass while the panel is runtime-broken (missing helpers).

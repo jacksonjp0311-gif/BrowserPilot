@@ -95,6 +95,19 @@ function setError(msg) {
   els.errorBox.textContent = msg;
 }
 
+function scrollMessagesToBottom() {
+  const scroll = () => {
+    const last = els.msgs?.lastElementChild;
+    if (last?.scrollIntoView) {
+      last.scrollIntoView({ block: 'end', inline: 'nearest' });
+    } else if (els.msgs) {
+      els.msgs.scrollTop = els.msgs.scrollHeight;
+    }
+  };
+  requestAnimationFrame(scroll);
+  setTimeout(scroll, 80);
+}
+
 function pushMsg(role, content, extraClass = '', metaInfo = {}) {
   const item = {
     id: metaInfo.id || `m-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -124,7 +137,7 @@ function pushMsg(role, content, extraClass = '', metaInfo = {}) {
   wrap.appendChild(meta);
   wrap.appendChild(body);
   els.msgs.appendChild(wrap);
-  els.msgs.scrollTop = els.msgs.scrollHeight;
+  scrollMessagesToBottom();
 
   queueSaveState();
   return { wrap, body, idx };
@@ -162,7 +175,7 @@ function rebuildFromChatLog() {
     }
   }
 
-  els.msgs.scrollTop = els.msgs.scrollHeight;
+  scrollMessagesToBottom();
   queueSaveState();
 }
 
@@ -225,6 +238,7 @@ function updatePending(requestId, content, done = false) {
 
   queueSaveState();
   syncStopUI();
+  scrollMessagesToBottom();
 
   // Only auto-execute on final frame.
   if (done && jarvisMode) {

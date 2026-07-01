@@ -264,14 +264,19 @@
       overflow: hidden;
       display: grid;
       grid-template-rows: 1fr;
+      min-height: 0;
     }
 
     .msgs {
       padding: 12px;
+      padding-bottom: 32px;
       overflow: auto;
       display: flex;
       flex-direction: column;
       gap: 10px;
+      min-height: 0;
+      box-sizing: border-box;
+      scroll-padding-bottom: 32px;
     }
 
     .msg {
@@ -304,6 +309,7 @@
       box-shadow: 0 0 0 1px rgba(25,239,131,0.14), 0 0 24px rgba(25,239,131,0.12);
       position: relative;
       overflow: hidden;
+      scroll-margin-bottom: 32px;
     }
 
     .msg.syncing::after {

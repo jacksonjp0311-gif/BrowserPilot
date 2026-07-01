@@ -547,15 +547,9 @@ async function captureActiveTab() {
 }
 
 async function openAgntChat() {
-  const settings = await bg({ type: 'AGNT_GET_SETTINGS' });
-  const s = settings?.settings || {};
-  if (s.agentBackend === 'hermes') {
-    const base = s.hermesBaseUrl || 'http://localhost:8642';
-    chrome.tabs.create({ url: base.replace(/\/$/, '') + '/health' });
-    return;
-  }
-  const base = s.agntBaseUrl || 'http://localhost:3333';
-  chrome.tabs.create({ url: base.replace(/\/$/, '') + '/chat' });
+  // Silent mode: do not open new tabs. User can manually open AGNT if needed.
+  // This function intentionally left minimal to prevent tab spawning.
+  console.log('BrowserPilot: AGNT chat requested (silent mode - no new tab opened)');
 }
 
 chrome.runtime.onMessage.addListener((msg) => {

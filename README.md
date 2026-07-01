@@ -34,6 +34,18 @@ The repo includes:
 
 ---
 
+## Silent AGNT Integration 🤫
+
+**BrowserPilot runs entirely in the side panel. No new browser tabs will open.**
+
+- Chat and agent responses appear directly in the side panel
+- Commands execute in the current tab
+- AGNT telemetry is logged locally for debugging
+
+This is intentional: BrowserPilot is designed to be a **non-intrusive browser operator** that works in-context, not a separate browser automation window.
+
+---
+
 ## New AGNT user checklist ✅ (distribution confidence)
 
 Use this when someone installs BrowserPilot on a fresh machine.

@@ -2,6 +2,14 @@
 
 BrowserPilot ships browser-specific adapters while keeping one AGNT bridge contract.
 
+BrowserPilot can target either AGNT (`http://localhost:3333`) or Hermes Agent API Server (`http://localhost:8642`). Both backends receive the same browser-control protocol; AGNT can mirror into AGNT `/chat`, while Hermes uses `/v1/chat/completions` with a stable `X-Hermes-Session-Key`.
+
+See:
+
+```text
+docs\hermes-adapter.md
+```
+
 ## Edge
 
 Path:

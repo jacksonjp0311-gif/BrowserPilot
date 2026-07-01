@@ -2,11 +2,11 @@
 
 **Copilot is not enough for a browser. You have to let agents in — *but* keep the execution path inspectable.**
 
-BrowserPilot is a **local-first browser-agent bridge** for **AGNT**:
+BrowserPilot is a **local-first browser-agent bridge** for **AGNT** and **Hermes Agent**:
 
 - A side panel in **Edge** and **Chrome**
 - Captures **bounded page context** (URL, title, selection, capped text)
-- Chats with your AGNT agent (**`Edge Tab Operator`**)
+- Chats with your AGNT agent (**`Edge Tab Operator`**) or Hermes through its API Server adapter
 - Executes explicit, auditable tab commands via a single protocol line:
 
 ```text
@@ -90,6 +90,11 @@ Use this when someone installs BrowserPilot on a fresh machine.
 - A running **AGNT** instance (default: `http://localhost:3333`)
 - An AGNT bearer token
 
+Optional:
+
+- A running **Hermes Agent API Server** (default: `http://localhost:8642`)
+- Hermes `API_SERVER_KEY`
+
 ### 1) Start AGNT
 
 ```powershell
@@ -153,6 +158,21 @@ localStorage.getItem("token")
 6. Click **Test connection** → **Save**.
 
 On first run, BrowserPilot automatically creates/selects the AGNT agent named **`Edge Tab Operator`** (the operator).
+
+### 6) Configure Hermes instead of AGNT
+
+BrowserPilot can also use Hermes Agent directly:
+
+1. Start Hermes with its API Server enabled.
+2. Open BrowserPilot **Options**.
+3. Set **Agent Backend** to **Hermes Agent**.
+4. Set **Hermes API Server URL** to `http://localhost:8642`.
+5. Paste the Hermes `API_SERVER_KEY`.
+6. Click **Test connection** -> **Save**.
+
+Hermes mode talks to `/v1/chat/completions` and uses `X-Hermes-Session-Key` so the BrowserPilot side-panel conversation stays in one Hermes session across restarts.
+
+See [docs/hermes-adapter.md](docs/hermes-adapter.md).
 
 ---
 

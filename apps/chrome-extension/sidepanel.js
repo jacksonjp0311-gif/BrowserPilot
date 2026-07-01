@@ -548,7 +548,13 @@ async function captureActiveTab() {
 
 async function openAgntChat() {
   const settings = await bg({ type: 'AGNT_GET_SETTINGS' });
-  const base = settings?.settings?.agntBaseUrl || 'http://localhost:3333';
+  const s = settings?.settings || {};
+  if (s.agentBackend === 'hermes') {
+    const base = s.hermesBaseUrl || 'http://localhost:8642';
+    chrome.tabs.create({ url: base.replace(/\/$/, '') + '/health' });
+    return;
+  }
+  const base = s.agntBaseUrl || 'http://localhost:3333';
   chrome.tabs.create({ url: base.replace(/\/$/, '') + '/chat' });
 }
 

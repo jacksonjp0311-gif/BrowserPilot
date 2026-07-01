@@ -4,14 +4,20 @@
 import { BROWSER_PILOT_DEFAULT_POLICY_BUNDLE } from './policyBundles.js';
 
 async function getSettings() {
-  const { agntBaseUrl, agntToken, selectedAgentId } = await chrome.storage.sync.get([
+  const { agentBackend, agntBaseUrl, agntToken, hermesBaseUrl, hermesApiKey, selectedAgentId } = await chrome.storage.sync.get([
+    'agentBackend',
     'agntBaseUrl',
     'agntToken',
+    'hermesBaseUrl',
+    'hermesApiKey',
     'selectedAgentId'
   ]);
   return {
+    agentBackend: agentBackend || 'agnt',
     agntBaseUrl: agntBaseUrl || 'http://localhost:3333',
     agntToken: agntToken || '',
+    hermesBaseUrl: hermesBaseUrl || 'http://localhost:8642',
+    hermesApiKey: hermesApiKey || '',
     selectedAgentId: selectedAgentId || ''
   };
 }
@@ -314,6 +320,151 @@ async function agntAgentChat(agentId, { message, context = {}, history = [] }, {
   }
 }
 
+function browserPilotSystemPrompt(context = {}) {
+  return [
+    'You are BrowserPilot, a browser operator running inside a Chromium Side Panel.',
+    'You help the user understand and operate the current browser tab through bounded, inspectable commands.',
+    'When the user asks you to control the ACTIVE TAB, output exactly one line starting with AGNT_EXEC: followed by valid JSON.',
+    'The JSON must be an array of command objects, for example:',
+    'AGNT_EXEC: [{"kind":"navigate","url":"https://example.com"},{"kind":"click","css":"button#login"}]',
+    'Prefer kind="navigate" in the same tab unless the user explicitly asks for a new tab.',
+    'Do not wrap AGNT_EXEC JSON in markdown fences.',
+    context?.edgeCopilotMode
+      ? 'Edge Copilot mode is enabled: keep actions low-risk because commands may be policy-gated.'
+      : 'If Jarvis/control mode is off, answer normally and do not emit AGNT_EXEC unless asked to plan.'
+  ].join('\n');
+}
+
+function buildHermesMessages({ message, history = [], context = {} }) {
+  const page = context?.pageContext?.page || {};
+  const selection = context?.pageContext?.selection || '';
+  const pageText = context?.pageContext?.pageText || '';
+  const contextBlock = [
+    page?.url ? `Current URL: ${page.url}` : '',
+    page?.title ? `Current title: ${page.title}` : '',
+    selection ? `Selection: ${String(selection).slice(0, 2000)}` : '',
+    pageText ? `Page text excerpt: ${String(pageText).slice(0, 6000)}` : ''
+  ].filter(Boolean).join('\n');
+
+  const messages = [{ role: 'system', content: browserPilotSystemPrompt(context) }];
+  for (const item of Array.isArray(history) ? history.slice(-40) : []) {
+    const role = item?.role === 'assistant' ? 'assistant' : 'user';
+    const content = String(item?.content || '').trim();
+    if (content) messages.push({ role, content });
+  }
+  messages.push({
+    role: 'user',
+    content: contextBlock ? `${contextBlock}\n\nUser request: ${message}` : String(message || '')
+  });
+  return messages;
+}
+
+function parseOpenAIStyleSSE(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let out = '';
+  for (const frame of raw.split(/\r?\n\r?\n/)) {
+    for (const line of frame.split(/\r?\n/)) {
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === '[DONE]') continue;
+      try {
+        const json = JSON.parse(data);
+        out += json?.choices?.[0]?.delta?.content || json?.choices?.[0]?.message?.content || json?.output_text || '';
+      } catch {
+        // ignore malformed keepalive/event frames
+      }
+    }
+  }
+  return out;
+}
+
+async function hermesAgentChat({ message, history = [], context = {}, bridgeConversationKey = 'browserpilot-hermes' }, { requestId, streamToExtension = false, signal } = {}) {
+  const { hermesBaseUrl, hermesApiKey } = await getSettings();
+  const base = (hermesBaseUrl || 'http://localhost:8642').replace(/\/$/, '');
+  const url = base + '/v1/chat/completions';
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Hermes-Session-Key': bridgeConversationKey
+  };
+  if (hermesApiKey) headers.Authorization = 'Bearer ' + hermesApiKey;
+
+  const emit = (content, done = false) => {
+    if (!streamToExtension || !requestId) return;
+    chrome.runtime.sendMessage({ type: 'AGNT_EXTENSION_RESPONSE', requestId, content, done }).catch(() => {});
+  };
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: 'hermes-agent',
+        messages: buildHermesMessages({ message, history, context }),
+        stream: true
+      }),
+      signal
+    });
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      emit('[stopped]', true);
+      return '';
+    }
+    throw e;
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `Hermes HTTP ${res.status}`);
+  }
+
+  const ctype = (res.headers.get('content-type') || '').toLowerCase();
+  if (ctype.includes('text/event-stream') && res.body) {
+    const reader = res.body.getReader();
+    const dec = new TextDecoder('utf-8');
+    let buf = '';
+    let content = '';
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        while (true) {
+          let idx = buf.indexOf('\n\n');
+          const idx2 = buf.indexOf('\r\n\r\n');
+          if (idx === -1 || (idx2 !== -1 && idx2 < idx)) idx = idx2;
+          if (idx === -1) break;
+          const frame = buf.slice(0, idx + (idx === idx2 ? 4 : 2));
+          buf = buf.slice(idx + (idx === idx2 ? 4 : 2));
+          content += parseOpenAIStyleSSE(frame);
+          emit(content, false);
+        }
+      }
+    } catch (e) {
+      if (e?.name === 'AbortError') {
+        emit(content ? `${content}\n\n[stopped]` : '[stopped]', true);
+        return content;
+      }
+      throw e;
+    }
+    content += parseOpenAIStyleSSE(buf);
+    emit(content, true);
+    return content;
+  }
+
+  const text = await res.text();
+  try {
+    const json = JSON.parse(text);
+    const content = json?.choices?.[0]?.message?.content || json?.choices?.[0]?.delta?.content || json?.output_text || JSON.stringify(json, null, 2);
+    emit(content, true);
+    return content;
+  } catch {
+    const content = parseOpenAIStyleSSE(text) || text;
+    emit(content, true);
+    return content;
+  }
+}
+
 chrome.runtime.onInstalled?.addListener(async () => {
   try {
     if (chrome.sidePanel?.setPanelBehavior) {
@@ -341,11 +492,26 @@ async function getActiveTabId() {
 }
 
 async function listAgents() {
+  const { agentBackend, hermesBaseUrl } = await getSettings();
+  if (agentBackend === 'hermes') {
+    return [{
+      id: 'hermes-browser-pilot',
+      name: 'Hermes Browser Pilot',
+      description: `Hermes API Server adapter (${(hermesBaseUrl || 'http://localhost:8642').replace(/\/$/, '')})`,
+      assignedTools: []
+    }];
+  }
+
   const data = await agntFetch('/api/agents/');
   return data.agents || [];
 }
 
 async function ensureDefaultAgent() {
+  const { agentBackend } = await getSettings();
+  if (agentBackend === 'hermes') {
+    return { created: false, agents: await listAgents() };
+  }
+
   const agents = await listAgents();
 
   // We intentionally DO NOT default to ai-browser-use here.
@@ -494,12 +660,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       if (msg?.type === 'AGNT_CHAT') {
         const { agentId, message, context } = msg;
+        const { agentBackend } = await getSettings();
+        if (agentBackend === 'hermes') {
+          const response = await hermesAgentChat({ message, context: context || {}, bridgeConversationKey: msg.bridgeConversationKey || 'browserpilot-hermes' });
+          sendResponse({ ok: true, data: { response } });
+          return;
+        }
         const response = await agntAgentChat(agentId, { message, context: context || {} });
         sendResponse({ ok: true, data: { response } });
         return;
       }
 
       if (msg?.type === 'AGNT_SUGGESTIONS') {
+        const { agentBackend } = await getSettings();
+        if (agentBackend === 'hermes') {
+          sendResponse({ ok: true, data: { suggestions: ['Summarize this page', 'Find the next useful action', 'Navigate to the relevant account page'] } });
+          return;
+        }
         const { agentId, context } = msg;
         const data = await agntFetch(`/api/agents/${encodeURIComponent(agentId)}/suggestions`, {
           method: 'POST',
@@ -559,9 +736,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const agentName = msg.agentName || null;
         const bridgeConversationKey = msg.bridgeConversationKey || `browserpilot-agent-${agentId}`;
         const bridgeConversationTitle = msg.bridgeConversationTitle || `BrowserPilot - ${agentName || 'Edge Tab Operator'}`;
+        const { agentBackend } = await getSettings();
 
         if (!agentId) throw new Error('agentId is required');
         if (!message || !String(message).trim()) throw new Error('message is required');
+
+        if (agentBackend === 'hermes') {
+          const rid = msg.requestId || null;
+          const controller = rid ? new AbortController() : null;
+          if (rid && controller) abortControllers.set(rid, controller);
+
+          let response;
+          try {
+            response = await hermesAgentChat(
+              { message, history, context, bridgeConversationKey },
+              { requestId: rid, streamToExtension: true, signal: controller?.signal }
+            );
+          } finally {
+            if (rid) abortControllers.delete(rid);
+          }
+
+          sendResponse({ ok: true, response, chatTabId: null });
+          return;
+        }
 
         // Mirror best-effort (do not block agent response on this)
         const mirrorPromise = (async () => {

@@ -42,7 +42,9 @@
   "host_permissions": [
     "<all_urls>",
     "http://localhost:3333/*",
-    "https://localhost:3333/*"
+    "https://localhost:3333/*",
+    "http://localhost:8642/*",
+    "https://localhost:8642/*"
   ],
   "content_scripts": [
     {

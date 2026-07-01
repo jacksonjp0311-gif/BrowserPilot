@@ -61,7 +61,7 @@
       margin-bottom: 6px;
     }
 
-    input {
+    input, select {
       width: 100%;
       background: rgba(0,0,0,0.22);
       border: 1px solid var(--color-lighter-0);
@@ -112,11 +112,23 @@
       If you have multiple AGNT instances, use <b>Detect from active tab</b> to ensure we connect to the same one as the app you’re viewing.
     </p>
 
+    <label>Agent Backend</label>
+    <select id="backend">
+      <option value="agnt">AGNT</option>
+      <option value="hermes">Hermes Agent</option>
+    </select>
+
     <label>AGNT Base URL</label>
     <input id="baseUrl" placeholder="http://localhost:3333" />
 
     <label>AGNT Auth Token (Bearer)</label>
     <input id="token" placeholder="Paste token here" />
+
+    <label>Hermes API Server URL</label>
+    <input id="hermesBaseUrl" placeholder="http://localhost:8642" />
+
+    <label>Hermes API Server Key</label>
+    <input id="hermesApiKey" placeholder="API_SERVER_KEY for Hermes gateway api_server" />
 
     <div class="row">
       <button id="detectBtn">Detect from active tab</button>

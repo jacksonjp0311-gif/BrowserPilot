@@ -1,5 +1,8 @@
 const baseUrlEl = document.getElementById('baseUrl');
 const tokenEl = document.getElementById('token');
+const backendEl = document.getElementById('backend');
+const hermesBaseUrlEl = document.getElementById('hermesBaseUrl');
+const hermesApiKeyEl = document.getElementById('hermesApiKey');
 const saveBtn = document.getElementById('saveBtn');
 const detectBtn = document.getElementById('detectBtn');
 const testBtn = document.getElementById('testBtn');
@@ -88,16 +91,28 @@ async function requestJarvisPermissions() {
 }
 
 async function load() {
-  const { agntBaseUrl, agntToken } = await chrome.storage.sync.get(['agntBaseUrl', 'agntToken']);
+  const { agentBackend, agntBaseUrl, agntToken, hermesBaseUrl, hermesApiKey } = await chrome.storage.sync.get([
+    'agentBackend',
+    'agntBaseUrl',
+    'agntToken',
+    'hermesBaseUrl',
+    'hermesApiKey'
+  ]);
+  if (backendEl) backendEl.value = agentBackend || 'agnt';
   baseUrlEl.value = agntBaseUrl || 'http://localhost:3333';
   tokenEl.value = agntToken || '';
+  if (hermesBaseUrlEl) hermesBaseUrlEl.value = hermesBaseUrl || 'http://localhost:8642';
+  if (hermesApiKeyEl) hermesApiKeyEl.value = hermesApiKey || '';
 }
 
 async function save() {
   setErr(null);
+  const agentBackend = backendEl?.value || 'agnt';
   const agntBaseUrl = baseUrlEl.value.trim() || 'http://localhost:3333';
   const agntToken = tokenEl.value.trim();
-  await chrome.storage.sync.set({ agntBaseUrl, agntToken });
+  const hermesBaseUrl = hermesBaseUrlEl?.value.trim() || 'http://localhost:8642';
+  const hermesApiKey = hermesApiKeyEl?.value.trim() || '';
+  await chrome.storage.sync.set({ agentBackend, agntBaseUrl, agntToken, hermesBaseUrl, hermesApiKey });
   statusEl.textContent = 'Saved.';
   setTimeout(() => (statusEl.textContent = ''), 2000);
 }
@@ -140,6 +155,22 @@ async function detectFromActiveTab() {
 async function testConnection() {
   setErr(null);
   statusEl.textContent = 'Testing…';
+
+  if ((backendEl?.value || 'agnt') === 'hermes') {
+    const base = (hermesBaseUrlEl?.value.trim() || 'http://localhost:8642').replace(/\/$/, '');
+    const key = hermesApiKeyEl?.value.trim() || '';
+    const res = await fetch(base + '/health', {
+      headers: key ? { Authorization: 'Bearer ' + key } : {}
+    });
+    const text = await res.text();
+    let json;
+    try { json = JSON.parse(text); } catch { json = { raw: text }; }
+    statusEl.textContent = 'Done.';
+    setTimeout(() => (statusEl.textContent = ''), 2000);
+    if (!res.ok) throw new Error(`Hermes health failed: ${res.status} ${JSON.stringify(json).slice(0, 200)}`);
+    setErr('OK\nbackend: Hermes\nbase: ' + base);
+    return;
+  }
 
   const base = (baseUrlEl.value.trim() || 'http://localhost:3333').replace(/\/$/, '');
   const token = tokenEl.value.trim();

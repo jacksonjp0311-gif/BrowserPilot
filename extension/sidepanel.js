@@ -216,6 +216,30 @@ async function bg(msg) {
   return await chrome.runtime.sendMessage(msg);
 }
 
+function pageContextStats(ctx = pageContext) {
+  return {
+    tabId: targetTabId,
+    url: ctx?.page?.url || '',
+    title: ctx?.page?.title || '',
+    selectionChars: String(ctx?.selection || '').length,
+    pageTextChars: String(ctx?.pageText || '').length
+  };
+}
+
+async function telemetry(eventType, data = {}) {
+  await bg({
+    type: 'AGNT_TELEMETRY',
+    eventType,
+    data: {
+      surface: 'sidepanel',
+      agentId: selectedAgentId || null,
+      agentName: selectedAgentName || null,
+      jarvisMode,
+      ...data
+    }
+  }).catch(() => {});
+}
+
 function renderContextHint() {
   if (!pageContext) return;
   const url = pageContext?.page?.url || '';
@@ -429,6 +453,10 @@ async function maybeExecuteJarvisFromText(text) {
   if (!parsed) return;
   const commands = Array.isArray(parsed) ? parsed : (parsed?.commands || parsed?.agntExec || null);
   if (!Array.isArray(commands) || !commands.length) return;
+  await telemetry('command_batch_detected', {
+    commandCount: commands.length,
+    commandKinds: commands.map((cmd) => String(cmd?.kind || 'unknown')).slice(0, 25)
+  });
   await execCommandsOnActiveTab(commands);
 }
 
@@ -452,10 +480,18 @@ async function sendMessage(text) {
   syncStopUI();
 
   const context = { pageContext, jarvisMode, tabControl: jarvisMode ? tabControlProtocol() : null };
+  const startedAt = Date.now();
+  await telemetry('sidepanel_chat_send', {
+    requestId,
+    messageChars: String(text || '').length,
+    historyCount: history.length,
+    hasPageContext: Boolean(pageContext),
+    ...pageContextStats()
+  });
 
-  // This call does TWO things:
-  // 1) returns an immediate agent response for the sidebar bubble
-  // 2) mirrors the same user message into the real AGNT /chat for persistence + identical UI
+  // Side-panel chat call:
+  // - returns an immediate agent response for the sidebar bubble
+  // - does NOT open/focus any AGNT /chat tabs
   const res = await bg({
     type: 'AGNT_SEND_AND_MIRROR',
     requestId,
@@ -482,6 +518,11 @@ async function sendMessage(text) {
 
   setHeaderStatus('linked');
   updatePending(requestId, responseText, true);
+  await telemetry('sidepanel_chat_done', {
+    requestId,
+    durationMs: Date.now() - startedAt,
+    responseChars: responseText.length
+  });
 }
 
 async function stopCurrent() {
@@ -490,6 +531,7 @@ async function stopCurrent() {
 
   // Best-effort: ask the background worker to abort the streaming fetch.
   await bg({ type: 'AGNT_ABORT_REQUEST', requestId: rid }).catch(() => {});
+  await telemetry('sidepanel_stop_requested', { requestId: rid });
 
   // Immediate UX: mark the bubble as stopped (background may still emit a final frame).
   const entry = pending.get(rid);
@@ -503,21 +545,33 @@ async function stopCurrent() {
   syncStopUI();
 }
 
-async function getSuggestions() {
-  if (!selectedAgentId) throw new Error('No agent selected.');
-
-  const ctx = pageContext
-    ? `page: ${pageContext.page?.title || ''} ${pageContext.page?.url || ''}\nselection: ${(pageContext.selection || '').slice(0, 800)}`
-    : (els.input.value || '').slice(0, 800);
-
-  const res = await bg({ type: 'AGNT_SUGGESTIONS', agentId: selectedAgentId, context: ctx });
-  if (!res.ok) {
+async function analyzeTelemetry() {
+  const context = {
+    page: pageContextStats(),
+    agentId: selectedAgentId || null,
+    agentName: selectedAgentName || null,
+    jarvisMode,
+  };
+  await telemetry('telemetry_analysis_requested', context);
+  const res = await bg({ type: 'AGNT_ANALYZE_TELEMETRY', limit: 250, context });
+  if (!res?.ok) {
     const detail = res?.details ? `\n\nDetails: ${JSON.stringify(res.details).slice(0, 800)}` : '';
-    throw new Error((res.error || 'Suggestions failed') + detail);
+    throw new Error((res?.error || 'Telemetry analysis failed') + detail);
   }
-
-  const suggestions = res.data?.suggestions || [];
-  pushMsg('assistant', suggestions.length ? ('Suggestions:\n- ' + suggestions.join('\n- ')) : '(no suggestions returned)');
+  const analysis = res.data?.analysis || {};
+  const summary = analysis.summary || {};
+  const graphStats = analysis.graphStats || {};
+  const topCommands = (analysis.topCommands || []).map(([name, count]) => `${name} (${count})`).join(', ') || 'none yet';
+  const topEvents = (analysis.topEvents || []).map(([name, count]) => `${name} (${count})`).join(', ') || 'none yet';
+  const hints = (analysis.toolHints || []).length ? ('\nTool hints:\n- ' + analysis.toolHints.join('\n- ')) : '';
+  pushMsg('assistant', [
+    '[telemetry] graph updated',
+    `Events: ${summary.windowSize || 0} | nodes: ${graphStats.nodes || 0} | edges: ${graphStats.edges || 0}`,
+    `Top events: ${topEvents}`,
+    `Top commands: ${topCommands}`,
+    summary.lastTab?.url ? `Last tab: ${summary.lastTab.url}` : '',
+    hints
+  ].filter(Boolean).join('\n'));
 }
 
 async function captureActiveTab() {
@@ -528,18 +582,20 @@ async function captureActiveTab() {
   renderContextHint();
   queueSaveState();
   pushMsg('assistant', '[context] captured page text + selection (bounded)');
+  await telemetry('sidepanel_context_captured', pageContextStats());
 }
 
 async function openAgntChat() {
-  const settings = await bg({ type: 'AGNT_GET_SETTINGS' });
-  const s = settings?.settings || {};
-  if (s.agentBackend === 'hermes') {
-    const base = s.hermesBaseUrl || 'http://localhost:8642';
-    chrome.tabs.create({ url: base.replace(/\/$/, '') + '/health' });
-    return;
-  }
-  const base = s.agntBaseUrl || 'http://localhost:3333';
-  chrome.tabs.create({ url: base.replace(/\/$/, '') + '/chat' });
+  // Sidepanel-only mode:
+  // - Never open/focus/create any AGNT (/chat) tabs
+  // - Conversation persistence is handled via backend API/session keys
+  // If you want a detached AGNT UI, open it manually in a normal tab/window.
+  try {
+    pushMsg('assistant', '[ui] "Open AGNT Chat" is disabled in side-panel mode — no tab will be opened.');
+  } catch {}
+  try {
+    await telemetry('open_agnt_chat_disabled', { reason: "sidepanel_only" });
+  } catch {}
 }
 
 function cleanSlate() {
@@ -554,6 +610,7 @@ function cleanSlate() {
   setHeaderStatus(agents.length ? 'linked' : 'idle');
   syncStopUI();
   queueSaveState();
+  telemetry('sidepanel_clean_slate', { bridgeConversationKey }).catch(() => {});
 }
 
 chrome.runtime.onMessage.addListener((msg) => {
@@ -564,7 +621,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     queueSaveState();
   }
 
-  // Echo/stream from AGNT /chat back into the sidebar placeholder.
+  // Echo/stream from AGNT agent chat (SSE) back into the sidebar placeholder.
   // Background will send {done:false} updates during SSE streaming, and a final {done:true}.
   if (msg?.type === 'AGNT_EXTENSION_RESPONSE') {
     const { requestId, content, error, done } = msg;
@@ -590,6 +647,7 @@ if (els.actBtn) els.actBtn.addEventListener('click', () => {
   jarvisMode = !jarvisMode;
   renderJarvisBtn();
   queueSaveState();
+  telemetry('sidepanel_control_mode_changed', { mode: jarvisMode ? 'jarvis' : 'off' }).catch(() => {});
 });
 els.openAgntBtn.addEventListener('click', () => openAgntChat().catch(e => setError(e.message)));
 
@@ -600,7 +658,7 @@ els.sendBtn.addEventListener('click', () => {
   sendMessage(text).catch(e => setError(e.message));
 });
 
-els.suggestBtn.addEventListener('click', () => getSuggestions().catch(e => setError(e.message)));
+els.suggestBtn.addEventListener('click', () => analyzeTelemetry().catch(e => setError(e.message)));
 if (els.stopBtn) els.stopBtn.addEventListener('click', () => stopCurrent().catch(e => setError(e.message)));
 if (els.cleanSlateBtn) els.cleanSlateBtn.addEventListener('click', () => cleanSlate());
 
@@ -631,6 +689,7 @@ document.addEventListener('click', (e) => { if (!e.target.closest('.combo')) clo
     await ensureAndLoadAgents();
     setError(null);
     syncStopUI();
+    telemetry('sidepanel_ready', { restoredMessages: chatLog.length, ...pageContextStats() }).catch(() => {});
 
     // Persist when closing the panel.
     window.addEventListener('beforeunload', () => queueSaveState());

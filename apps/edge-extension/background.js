@@ -72,11 +72,32 @@ async function evaluateEdgeCopilotPolicy(cmd, pageContext = null) {
 }
 
 // --- Telemetry ---
-const TELEMETRY_ENDPOINT = '/api/telemetry/execution';
+const TELEMETRY_ENDPOINT = '/api/telemetry/browserpilot';
 async function recordTelemetry(eventType, data = {}) {
   try {
-    await agntFetch(TELEMETRY_ENDPOINT, { method: 'POST', body: JSON.stringify({ eventType, ...data, ts: new Date().toISOString() }) });
+    await agntFetch(TELEMETRY_ENDPOINT, { method: 'POST', body: { eventType, adapter: 'edge', data, ts: new Date().toISOString() } });
   } catch { /* silent fail - telemetry should never break UX */ }
+}
+
+function tabSnapshot(tab = {}) {
+  return {
+    tabId: tab.id,
+    windowId: tab.windowId,
+    status: tab.status,
+    active: Boolean(tab.active),
+    url: tab.url,
+    title: tab.title
+  };
+}
+
+const tabTelemetryLast = new Map();
+async function recordTabTelemetry(eventType, tab) {
+  if (!tab?.id) return;
+  const key = `${eventType}:${tab.id}:${tab.url || ''}:${tab.status || ''}`;
+  const now = Date.now();
+  if ((tabTelemetryLast.get(key) || 0) + 1500 > now) return;
+  tabTelemetryLast.set(key, now);
+  await recordTelemetry(eventType, tabSnapshot(tab));
 }
 
 // --- Silent AGNT Messaging (no new tabs) ---
@@ -193,6 +214,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg?.type === 'AGNT_LIST_AGENTS') { const data = await agntFetch('/api/agents/'); sendResponse({ ok: true, agents: data.agents || [] }); return; }
       if (msg?.type === 'AGNT_ENSURE_DEFAULT_AGENT') { const out = await ensureDefaultAgent(); sendResponse({ ok: true, ...out }); return; }
       if (msg?.type === 'AGNT_CHAT') { const { agentId, message, context } = msg; const resp = await agntAgentChat(agentId, { message, context }); sendResponse({ ok: true, data: { response: resp } }); return; }
+      if (msg?.type === 'AGNT_OPEN_CHAT_AND_SEND') {
+        sendResponse({ ok: true, tabId: null, disabled: true, reason: 'BrowserPilot side-panel chat is sidepanel-only; no AGNT tabs will be opened.' });
+        return;
+      }
+
       if (msg?.type === 'AGNT_SEND_AND_MIRROR') {
         const { agentId, message } = msg;
         if (!agentId) throw new Error('agentId is required');
@@ -208,6 +234,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg?.type === 'AGNT_ABORT_REQUEST') { sendResponse({ ok: true, aborted: false, requestId: msg.requestId || null }); return; }
       if (msg?.type === 'AGNT_EXEC_COMMAND') { const { command, pageContext, edgeCopilot } = msg; const r = await execCommandWithTelemetry(command, pageContext, Boolean(edgeCopilot)); sendResponse(r); return; }
       if (msg?.type === 'AGNT_TELEMETRY') { await recordTelemetry(msg.eventType || 'generic', msg.data || {}); sendResponse({ ok: true }); return; }
+      if (msg?.type === 'AGNT_ANALYZE_TELEMETRY') { const data = await agntFetch('/api/telemetry/browserpilot/analyze', { method: 'POST', body: { limit: msg.limit || 200, context: msg.context || {} } }); sendResponse({ ok: true, data }); return; }
       sendResponse({ ok: true, ignored: true });
     } catch (e) {
       sendResponse({ ok: false, error: e?.message || String(e) });
@@ -218,3 +245,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // --- Init ---
 chrome.runtime.onInstalled.addListener(() => {});
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    await recordTabTelemetry('tab_activated', tab);
+  } catch {}
+});
+chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
+  if (!changeInfo.url && changeInfo.status !== 'complete') return;
+  try { await recordTabTelemetry('tab_updated', tab); } catch {}
+});

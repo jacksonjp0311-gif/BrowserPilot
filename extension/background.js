@@ -50,6 +50,39 @@ async function agntFetch(path, { method = 'GET', body } = {}) {
   return json;
 }
 
+const TELEMETRY_ENDPOINT = '/api/telemetry/browserpilot';
+async function recordTelemetry(eventType, data = {}) {
+  try {
+    await agntFetch(TELEMETRY_ENDPOINT, {
+      method: 'POST',
+      body: { eventType, adapter: 'legacy', data, ts: new Date().toISOString() }
+    });
+  } catch {
+    // Telemetry is sensory only; it must never break browser control.
+  }
+}
+
+function tabSnapshot(tab = {}) {
+  return {
+    tabId: tab.id,
+    windowId: tab.windowId,
+    status: tab.status,
+    active: Boolean(tab.active),
+    url: tab.url,
+    title: tab.title
+  };
+}
+
+const tabTelemetryLast = new Map();
+async function recordTabTelemetry(eventType, tab) {
+  if (!tab?.id) return;
+  const key = `${eventType}:${tab.id}:${tab.url || ''}:${tab.status || ''}`;
+  const now = Date.now();
+  if ((tabTelemetryLast.get(key) || 0) + 1500 > now) return;
+  tabTelemetryLast.set(key, now);
+  await recordTelemetry(eventType, tabSnapshot(tab));
+}
+
 // --- Abort / Stop support ---
 const abortControllers = new Map(); // requestId -> AbortController
 
@@ -527,6 +560,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
         if (!agentId) throw new Error('agentId is required');
         if (!message || !String(message).trim()) throw new Error('message is required');
+        await recordTelemetry('chat_send_started', {
+          requestId: msg.requestId || null,
+          agentId,
+          agentName,
+          backend: agentBackend,
+          historyCount: history.length,
+          messageChars: String(message).length,
+          hasPageContext: Boolean(pageContext)
+        });
 
         if (agentBackend === 'hermes') {
           const rid = msg.requestId || null;
@@ -543,6 +585,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (rid) abortControllers.delete(rid);
           }
 
+          await recordTelemetry('chat_response_completed', {
+            requestId: rid,
+            backend: 'hermes',
+            responseChars: String(response || '').length
+          });
           sendResponse({ ok: true, response, chatTabId: null });
           return;
         }
@@ -564,6 +611,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (rid) abortControllers.delete(rid);
         }
 
+        await recordTelemetry('chat_response_completed', {
+          requestId: rid,
+          backend: 'agnt',
+          responseChars: String(response || '').length
+        });
         sendResponse({ ok: true, response, chatTabId: null, mirrored: false });
         return;
       }
@@ -621,6 +673,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const tabId = msg.tabId ?? await getActiveTabId();
         if (typeof tabId !== 'number') throw new Error('No active tab');
         const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_CAPTURE_CONTEXT' });
+        await recordTelemetry('context_captured', {
+          tabId,
+          url: res?.context?.page?.url,
+          title: res?.context?.page?.title,
+          selectionChars: String(res?.context?.selection || '').length,
+          pageTextChars: String(res?.context?.pageText || '').length
+        });
         sendResponse({ ok: true, tabId, context: res?.context || null });
         return;
       }
@@ -637,6 +696,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const url = String(cmd.url || '').trim();
           if (!url) throw new Error('navigate.url is required');
           await chrome.tabs.update(tabId, { url });
+          await recordTelemetry('command_executed', { tabId, kind, url });
           sendResponse({ ok: true, result: 'navigated ' + url });
           return;
         }
@@ -645,18 +705,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const url = String(cmd.url || '').trim();
           if (!url) throw new Error('openTab.url is required');
           const created = await chrome.tabs.create({ url, active: true, openerTabId: tabId });
+          await recordTelemetry('command_executed', { tabId, kind, url, openedTabId: created?.id });
           sendResponse({ ok: true, result: 'opened tab ' + url, tabId: created?.id });
           return;
         }
 
         if (kind === 'closeTab') {
           await chrome.tabs.remove(tabId);
+          await recordTelemetry('command_executed', { tabId, kind });
           sendResponse({ ok: true, result: 'closed active tab' });
           return;
         }
 
         const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_EXEC', command: cmd });
+        await recordTelemetry(res?.ok === false ? 'command_error' : 'command_executed', {
+          tabId,
+          kind,
+          error: res?.ok === false ? res?.error : undefined
+        });
         sendResponse(res);
+        return;
+      }
+
+      if (msg?.type === 'AGNT_TELEMETRY') {
+        await recordTelemetry(msg.eventType || 'generic', msg.data || {});
+        sendResponse({ ok: true });
+        return;
+      }
+
+      if (msg?.type === 'AGNT_ANALYZE_TELEMETRY') {
+        const data = await agntFetch('/api/telemetry/browserpilot/analyze', {
+          method: 'POST',
+          body: { limit: msg.limit || 200, context: msg.context || {} }
+        });
+        sendResponse({ ok: true, data });
         return;
       }
 
@@ -667,4 +749,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   })();
 
   return true;
+});
+
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    await recordTabTelemetry('tab_activated', tab);
+  } catch {}
+});
+
+chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
+  if (!changeInfo.url && changeInfo.status !== 'complete') return;
+  try { await recordTabTelemetry('tab_updated', tab); } catch {}
 });

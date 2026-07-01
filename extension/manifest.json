@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BrowserPilot",
-  "version": "0.1.10",
+  "version": "0.1.11",
+  "version_name": "0.1.11 telemetry graph",
   "description": "Let an AGNT agent understand and operate the browser tab you are already using.",
   "action": {
     "default_title": "BrowserPilot",

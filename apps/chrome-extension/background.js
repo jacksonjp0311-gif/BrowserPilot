@@ -850,6 +850,47 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
+      if (msg?.type === 'AGNT_START_CYBER_SNAPSHOT' || msg?.type === 'BROWSERPILOT_START_CYBER_SNAPSHOT') {
+        const tabId = msg.tabId ?? await getActiveTabId();
+        if (typeof tabId !== 'number') throw new Error('No active tab');
+        const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_START_CYBER_SNAPSHOT' });
+        await recordTelemetry(res?.ok ? 'cyber_snapshot_started' : 'cyber_snapshot_failed', {
+          tabId,
+          ok: Boolean(res?.ok),
+          error: res?.ok ? null : res?.error
+        });
+        sendResponse({ ...(res || {}), tabId });
+        return;
+      }
+
+      if (msg?.type === 'AGNT_START_REGION_WATCH' || msg?.type === 'BROWSERPILOT_START_REGION_WATCH') {
+        const tabId = msg.tabId ?? await getActiveTabId();
+        if (typeof tabId !== 'number') throw new Error('No active tab');
+        const res = await chrome.tabs.sendMessage(tabId, {
+          type: 'AGNT_START_REGION_WATCH',
+          rect: msg.rect,
+          previousText: msg.previousText || '',
+          page: msg.page || null
+        });
+        await recordTelemetry(res?.ok ? 'cyber_region_watch_started' : 'cyber_region_watch_failed', {
+          tabId,
+          rect: msg.rect || null,
+          ok: Boolean(res?.ok),
+          error: res?.ok ? null : res?.error
+        });
+        sendResponse({ ...(res || {}), tabId });
+        return;
+      }
+
+      if (msg?.type === 'AGNT_STOP_REGION_WATCH' || msg?.type === 'BROWSERPILOT_STOP_REGION_WATCH') {
+        const tabId = msg.tabId ?? await getActiveTabId();
+        if (typeof tabId !== 'number') throw new Error('No active tab');
+        const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_STOP_REGION_WATCH' });
+        await recordTelemetry('cyber_region_watch_stopped', { tabId, ok: Boolean(res?.ok) });
+        sendResponse({ ...(res || {}), tabId });
+        return;
+      }
+
       if (msg?.type === 'AGNT_EXEC_ACTIVE_TAB') {
         const tabId = msg.tabId ?? await getActiveTabId();
         if (typeof tabId !== 'number') throw new Error('No active tab');

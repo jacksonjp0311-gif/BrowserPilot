@@ -189,6 +189,345 @@
     };
   }
 
+  function rectsIntersect(a, b) {
+    return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  }
+
+  function extractTextInViewportRect(box) {
+    const parts = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const text = String(node.nodeValue || '').replace(/\s+/g, ' ').trim();
+        if (!text) return NodeFilter.FILTER_REJECT;
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        const style = window.getComputedStyle(parent);
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const rects = Array.from(range.getClientRects());
+        range.detach?.();
+        if (rects.some((r) => rectsIntersect(r, box))) {
+          const text = String(node.nodeValue || '').replace(/\s+/g, ' ').trim();
+          if (text) parts.push(text);
+        }
+      } catch {}
+      if (parts.join(' ').length > 12000) break;
+    }
+
+    return parts
+      .join(' ')
+      .replace(/\s+([.,;:!?])/g, '$1')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 12000);
+  }
+
+  let cyberRegionWatchTimer = null;
+  let cyberRegionWatchState = null;
+
+  function stopCyberRegionWatch() {
+    if (cyberRegionWatchTimer) clearInterval(cyberRegionWatchTimer);
+    cyberRegionWatchTimer = null;
+    cyberRegionWatchState = null;
+  }
+
+  function startCyberRegionWatch({ rect, previousText = '', page = null } = {}) {
+    if (!rect) throw new Error('Region watch requires a Cyber Snapshot rectangle.');
+    stopCyberRegionWatch();
+    cyberRegionWatchState = {
+      rect,
+      page,
+      previousText: String(previousText || ''),
+      previousHash: hashString(previousText || ''),
+      startedAt: new Date().toISOString()
+    };
+    cyberRegionWatchTimer = setInterval(() => {
+      try {
+        const text = extractTextInViewportRect({
+          left: Number(rect.x || 0),
+          top: Number(rect.y || 0),
+          right: Number(rect.x || 0) + Number(rect.width || 0),
+          bottom: Number(rect.y || 0) + Number(rect.height || 0),
+          width: Number(rect.width || 0),
+          height: Number(rect.height || 0)
+        });
+        const nextHash = hashString(text);
+        if (nextHash && nextHash !== cyberRegionWatchState.previousHash) {
+          const previousTextNow = cyberRegionWatchState.previousText;
+          cyberRegionWatchState.previousText = text;
+          cyberRegionWatchState.previousHash = nextHash;
+          chrome.runtime.sendMessage({
+            type: 'AGNT_CYBER_REGION_CHANGED',
+            page: cyberRegionWatchState.page || { url: location.href, title: document.title },
+            rect,
+            text,
+            previousText: previousTextNow,
+            changedAt: new Date().toISOString()
+          }).catch(() => {});
+        }
+      } catch {}
+    }, 1800);
+  }
+
+  function startCyberSnapshotOverlay() {
+    const existing = document.getElementById('agnt-cyber-snapshot-root');
+    if (existing) existing.remove();
+
+    const root = document.createElement('div');
+    root.id = 'agnt-cyber-snapshot-root';
+    root.innerHTML = `
+      <div class="agnt-cyber-dim"></div>
+      <div class="agnt-cyber-box" role="button" aria-label="Cyber Snapshot selection">
+        <span class="agnt-cyber-corner tl"></span>
+        <span class="agnt-cyber-corner tr"></span>
+        <span class="agnt-cyber-corner bl"></span>
+        <span class="agnt-cyber-corner br"></span>
+        <div class="agnt-cyber-grid"></div>
+        <div class="agnt-cyber-hud top">CYBERNETIC SNAPSHOT</div>
+        <div class="agnt-cyber-hud bottom">LEFT-CLICK CAPTURE</div>
+      </div>
+      <div class="agnt-cyber-callout move">Move box: drag with left mouse</div>
+      <div class="agnt-cyber-callout resize">Resize height: mouse wheel or up/down arrows</div>
+      <div class="agnt-cyber-callout width">Adjust width: hold right-click + drag left/right</div>
+      <div class="agnt-cyber-callout capture">Capture: left-click</div>
+      <div class="agnt-cyber-callout cancel">Cancel: Esc</div>
+    `;
+
+    const css = document.createElement('style');
+    css.textContent = `
+      #agnt-cyber-snapshot-root {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483646;
+        color: #e9fbff;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        pointer-events: auto;
+      }
+      #agnt-cyber-snapshot-root .agnt-cyber-dim {
+        position: absolute;
+        inset: 0;
+        background: rgba(3, 8, 18, 0.48);
+        backdrop-filter: saturate(0.75) brightness(0.78);
+      }
+      #agnt-cyber-snapshot-root .agnt-cyber-box {
+        position: absolute;
+        left: 18vw;
+        top: 22vh;
+        width: min(58vw, 840px);
+        height: min(38vh, 430px);
+        min-width: 220px;
+        min-height: 120px;
+        cursor: grab;
+        border: 1px solid rgba(112, 234, 255, 0.95);
+        background: rgba(126, 230, 255, 0.20);
+        box-shadow:
+          0 0 0 1px rgba(207, 249, 255, 0.30) inset,
+          0 0 28px rgba(18, 224, 255, 0.45),
+          0 0 90px rgba(18, 224, 255, 0.26);
+        overflow: hidden;
+      }
+      #agnt-cyber-snapshot-root .agnt-cyber-box:active { cursor: grabbing; }
+      #agnt-cyber-snapshot-root .agnt-cyber-grid {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(207,249,255,0.12) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(207,249,255,0.12) 1px, transparent 1px),
+          radial-gradient(circle at 65% 34%, rgba(207,249,255,0.28), transparent 22%);
+        background-size: 28px 28px, 28px 28px, 100% 100%;
+        mix-blend-mode: screen;
+        pointer-events: none;
+      }
+      #agnt-cyber-snapshot-root .agnt-cyber-corner {
+        position: absolute;
+        width: 34px;
+        height: 34px;
+        border-color: #d8fbff;
+        filter: drop-shadow(0 0 8px rgba(18,224,255,0.85));
+        pointer-events: none;
+      }
+      #agnt-cyber-snapshot-root .tl { left: 8px; top: 8px; border-left: 3px solid; border-top: 3px solid; }
+      #agnt-cyber-snapshot-root .tr { right: 8px; top: 8px; border-right: 3px solid; border-top: 3px solid; }
+      #agnt-cyber-snapshot-root .bl { left: 8px; bottom: 8px; border-left: 3px solid; border-bottom: 3px solid; }
+      #agnt-cyber-snapshot-root .br { right: 8px; bottom: 8px; border-right: 3px solid; border-bottom: 3px solid; }
+      #agnt-cyber-snapshot-root .agnt-cyber-hud {
+        position: absolute;
+        left: 18px;
+        padding: 5px 8px;
+        border: 1px solid rgba(112,234,255,0.36);
+        border-radius: 6px;
+        background: rgba(2, 10, 22, 0.68);
+        color: #bff7ff;
+        font-size: 11px;
+        font-weight: 750;
+        letter-spacing: 0.12em;
+        pointer-events: none;
+      }
+      #agnt-cyber-snapshot-root .agnt-cyber-hud.top { top: 18px; }
+      #agnt-cyber-snapshot-root .agnt-cyber-hud.bottom { bottom: 18px; }
+      #agnt-cyber-snapshot-root .agnt-cyber-callout {
+        position: absolute;
+        max-width: 240px;
+        padding: 8px 10px;
+        border: 1px solid rgba(112,234,255,0.42);
+        border-radius: 8px;
+        background: rgba(3, 10, 22, 0.86);
+        color: #d8fbff;
+        box-shadow: 0 0 22px rgba(18,224,255,0.20);
+        font-size: 12px;
+        font-weight: 650;
+        line-height: 1.25;
+      }
+      #agnt-cyber-snapshot-root .move { left: 24px; top: 38%; }
+      #agnt-cyber-snapshot-root .resize { left: 34%; bottom: 26px; }
+      #agnt-cyber-snapshot-root .width { left: 39%; top: 12%; }
+      #agnt-cyber-snapshot-root .capture { right: 26px; top: 45%; }
+      #agnt-cyber-snapshot-root .cancel { left: 24px; bottom: 26px; }
+    `;
+    root.appendChild(css);
+    document.documentElement.appendChild(root);
+
+    const box = root.querySelector('.agnt-cyber-box');
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    let mode = null;
+    let startX = 0;
+    let startY = 0;
+    let startRect = null;
+    let moved = false;
+
+    function getBoxRect() {
+      const r = box.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+    }
+
+    function setBox(rect) {
+      const width = clamp(rect.width, 220, window.innerWidth - 24);
+      const height = clamp(rect.height, 120, window.innerHeight - 24);
+      const left = clamp(rect.left, 12, window.innerWidth - width - 12);
+      const top = clamp(rect.top, 12, window.innerHeight - height - 12);
+      box.style.left = left + 'px';
+      box.style.top = top + 'px';
+      box.style.width = width + 'px';
+      box.style.height = height + 'px';
+    }
+
+    function finish(cancelled = false) {
+      document.removeEventListener('mousemove', onMove, true);
+      document.removeEventListener('mouseup', onUp, true);
+      document.removeEventListener('keydown', onKey, true);
+      root.removeEventListener('wheel', onWheel, true);
+      root.removeEventListener('contextmenu', onContextMenu, true);
+
+      if (cancelled) {
+        chrome.runtime.sendMessage({ type: 'AGNT_CYBER_SNAPSHOT_RESULT', cancelled: true }).catch(() => {});
+      }
+      root.remove();
+    }
+
+    function capture() {
+      const rect = getBoxRect();
+      const text = extractTextInViewportRect(rect);
+      const snapshot = {
+        schemaVersion: 'browserpilot.cyberSnapshot.v1',
+        capturedAt: new Date().toISOString(),
+        page: { url: location.href, title: document.title },
+        rect: {
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          viewportWidth: Math.round(window.innerWidth || document.documentElement.clientWidth || 0),
+          viewportHeight: Math.round(window.innerHeight || document.documentElement.clientHeight || 0),
+          devicePixelRatio: Number(window.devicePixelRatio || 1),
+          scrollX: Math.round(window.scrollX || 0),
+          scrollY: Math.round(window.scrollY || 0)
+        },
+        text,
+        textChars: text.length,
+        controls: {
+          move: 'drag with left mouse',
+          resizeHeight: 'mouse wheel or up/down arrows',
+          adjustWidth: 'hold right-click + drag left/right',
+          capture: 'left-click',
+          cancel: 'Esc'
+        }
+      };
+      chrome.runtime.sendMessage({ type: 'AGNT_CYBER_SNAPSHOT_RESULT', snapshot }).catch(() => {});
+      finish(false);
+    }
+
+    function onMove(e) {
+      if (!mode || !startRect) return;
+      e.preventDefault();
+      moved = moved || Math.abs(e.clientX - startX) > 4 || Math.abs(e.clientY - startY) > 4;
+      if (mode === 'move') {
+        setBox({ ...startRect, left: startRect.left + e.clientX - startX, top: startRect.top + e.clientY - startY });
+      } else if (mode === 'width') {
+        setBox({ ...startRect, width: startRect.width + e.clientX - startX });
+      }
+    }
+
+    function onUp(e) {
+      if (!mode) return;
+      const wasMode = mode;
+      mode = null;
+      e.preventDefault();
+      if (wasMode === 'move' && !moved && e.button === 0) capture();
+    }
+
+    function onDown(e) {
+      if (!box.contains(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      startX = e.clientX;
+      startY = e.clientY;
+      startRect = getBoxRect();
+      moved = false;
+      mode = e.button === 2 ? 'width' : 'move';
+      document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('mouseup', onUp, true);
+    }
+
+    function onWheel(e) {
+      e.preventDefault();
+      const rect = getBoxRect();
+      setBox({ ...rect, height: rect.height + (e.deltaY > 0 ? 28 : -28) });
+    }
+
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(true);
+        return;
+      }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const rect = getBoxRect();
+        setBox({ ...rect, height: rect.height + (e.key === 'ArrowDown' ? 24 : -24) });
+      }
+    }
+
+    function onContextMenu(e) {
+      if (box.contains(e.target)) e.preventDefault();
+    }
+
+    box.addEventListener('mousedown', onDown, true);
+    root.addEventListener('wheel', onWheel, true);
+    root.addEventListener('contextmenu', onContextMenu, true);
+    document.addEventListener('keydown', onKey, true);
+    setBox(getBoxRect());
+  }
+
   async function openSidePanelWithContext() {
     const context = captureContext();
     const res = await chrome.runtime.sendMessage({ type: 'AGNT_OPEN_SIDEPANEL' });
@@ -215,6 +554,24 @@
       try {
         if (msg?.type === 'AGNT_CAPTURE_CONTEXT') {
           sendResponse({ ok: true, context: captureContext() });
+          return;
+        }
+
+        if (msg?.type === 'AGNT_START_CYBER_SNAPSHOT' || msg?.type === 'BROWSERPILOT_START_CYBER_SNAPSHOT') {
+          startCyberSnapshotOverlay();
+          sendResponse({ ok: true, started: true });
+          return;
+        }
+
+        if (msg?.type === 'AGNT_START_REGION_WATCH' || msg?.type === 'BROWSERPILOT_START_REGION_WATCH') {
+          startCyberRegionWatch({ rect: msg.rect, previousText: msg.previousText || '', page: msg.page || null });
+          sendResponse({ ok: true, watching: true });
+          return;
+        }
+
+        if (msg?.type === 'AGNT_STOP_REGION_WATCH' || msg?.type === 'BROWSERPILOT_STOP_REGION_WATCH') {
+          stopCyberRegionWatch();
+          sendResponse({ ok: true, watching: false });
           return;
         }
 

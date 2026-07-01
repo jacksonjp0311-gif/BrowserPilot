@@ -151,6 +151,22 @@
       background: linear-gradient(90deg, rgba(18,224,255,0.16), rgba(229,61,143,0.14));
     }
 
+    .btnCyber {
+      border-color: rgba(18,224,255,0.38);
+      background:
+        linear-gradient(90deg, rgba(18,224,255,0.20), rgba(80,220,255,0.08)),
+        rgba(255,255,255,0.04);
+      color: rgba(235,252,255,0.96);
+      box-shadow: 0 0 0 1px rgba(18,224,255,0.08), 0 0 24px rgba(18,224,255,0.12);
+    }
+
+    .btnCyber:hover {
+      border-color: rgba(18,224,255,0.55);
+      background:
+        linear-gradient(90deg, rgba(18,224,255,0.26), rgba(229,61,143,0.12)),
+        rgba(255,255,255,0.07);
+    }
+
     .btnStop {
       border-color: rgba(254, 78, 78, 0.30);
       background: rgba(254, 78, 78, 0.12);
@@ -418,6 +434,8 @@
       <div class="row2">
         <button id="captureBtn">Capture page</button>
         <button id="actBtn" title="When ON, the agent can emit AGNT_EXEC commands to operate the current tab.">Jarvis: ON</button>
+        <button id="cyberSnapshotBtn" class="btnCyber" title="Select part of the current page and insert extracted text into chat.">Cyber Snapshot</button>
+        <button id="watchRegionBtn" title="Watch the last Cyber Snapshot region for text changes.">Watch region</button>
         <button id="openAgntBtn" class="btnAccent">Open AGNT Chat</button>
         <button id="syncIndicatorBtn" class="btnComms" disabled>Backend idle</button>
       </div>

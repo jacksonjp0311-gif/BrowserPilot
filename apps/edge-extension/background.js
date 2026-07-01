@@ -181,6 +181,11 @@ async function captureTab() {
   return { dataUrl };
 }
 
+async function getActiveTabId() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab?.id;
+}
+
 async function sendContentMessage(msg) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error('No active tab');
@@ -245,6 +250,134 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       if (msg?.type === 'AGNT_ABORT_REQUEST') { sendResponse({ ok: true, aborted: false, requestId: msg.requestId || null }); return; }
       if (msg?.type === 'AGNT_EXEC_COMMAND') { const { command, pageContext, edgeCopilot } = msg; const r = await execCommandWithTelemetry(command, pageContext, Boolean(edgeCopilot)); sendResponse(r); return; }
+
+      if (msg?.type === 'AGNT_CAPTURE_VISIBLE_TAB' || msg?.type === 'BROWSERPILOT_CAPTURE_VISIBLE_TAB') {
+        let tabId = msg.tabId ?? sender?.tab?.id;
+        if (typeof tabId !== 'number') tabId = await getActiveTabId();
+        if (typeof tabId !== 'number') { sendResponse({ ok: false, error: 'No active tabId for screenshot capture.' }); return; }
+        const tab = await chrome.tabs.get(tabId);
+        if (typeof tab?.windowId !== 'number') { sendResponse({ ok: false, error: 'No windowId for screenshot capture.' }); return; }
+        try {
+          const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+          sendResponse({ ok: true, dataUrl, tabId });
+        } catch (e) {
+          sendResponse({ ok: false, error: e?.message || String(e) });
+        }
+        return;
+      }
+
+      if (msg?.type === 'AGNT_CAPTURE_ACTIVE_TAB') {
+        const tabId = msg.tabId ?? await getActiveTabId();
+        if (typeof tabId !== 'number') throw new Error('No active tab');
+        const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_CAPTURE_CONTEXT' });
+        await recordTelemetry('context_captured', {
+          tabId,
+          url: res?.context?.page?.url,
+          title: res?.context?.page?.title,
+          selectionChars: String(res?.context?.selection || '').length,
+          pageTextChars: String(res?.context?.pageText || '').length
+        });
+        sendResponse({ ok: true, tabId, context: res?.context || null });
+        return;
+      }
+
+      if (msg?.type === 'AGNT_START_CYBER_SNAPSHOT' || msg?.type === 'BROWSERPILOT_START_CYBER_SNAPSHOT') {
+        const tabId = msg.tabId ?? await getActiveTabId();
+        if (typeof tabId !== 'number') throw new Error('No active tab');
+        const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_START_CYBER_SNAPSHOT' });
+        await recordTelemetry(res?.ok ? 'cyber_snapshot_started' : 'cyber_snapshot_failed', {
+          tabId,
+          ok: Boolean(res?.ok),
+          error: res?.ok ? null : res?.error
+        });
+        sendResponse({ ...(res || {}), tabId });
+        return;
+      }
+
+      if (msg?.type === 'AGNT_START_REGION_WATCH' || msg?.type === 'BROWSERPILOT_START_REGION_WATCH') {
+        const tabId = msg.tabId ?? await getActiveTabId();
+        if (typeof tabId !== 'number') throw new Error('No active tab');
+        const res = await chrome.tabs.sendMessage(tabId, {
+          type: 'AGNT_START_REGION_WATCH',
+          rect: msg.rect,
+          previousText: msg.previousText || '',
+          page: msg.page || null
+        });
+        await recordTelemetry(res?.ok ? 'cyber_region_watch_started' : 'cyber_region_watch_failed', {
+          tabId,
+          rect: msg.rect || null,
+          ok: Boolean(res?.ok),
+          error: res?.ok ? null : res?.error
+        });
+        sendResponse({ ...(res || {}), tabId });
+        return;
+      }
+
+      if (msg?.type === 'AGNT_STOP_REGION_WATCH' || msg?.type === 'BROWSERPILOT_STOP_REGION_WATCH') {
+        const tabId = msg.tabId ?? await getActiveTabId();
+        if (typeof tabId !== 'number') throw new Error('No active tab');
+        const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_STOP_REGION_WATCH' });
+        await recordTelemetry('cyber_region_watch_stopped', { tabId, ok: Boolean(res?.ok) });
+        sendResponse({ ...(res || {}), tabId });
+        return;
+      }
+
+      if (msg?.type === 'AGNT_EXEC_ACTIVE_TAB') {
+        const tabId = msg.tabId ?? await getActiveTabId();
+        if (typeof tabId !== 'number') throw new Error('No active tab');
+
+        const cmd = msg.command || {};
+        const kind = cmd.kind;
+        const edgeCopilot = Boolean(msg.edgeCopilot);
+        const policyBypass = Boolean(msg.policyBypass);
+        const pageCtx = msg.pageContext || null;
+
+        let policy = null;
+        if (edgeCopilot && !policyBypass) {
+          policy = await evaluateEdgeCopilotPolicy(cmd, pageCtx);
+          if (!policy?.ok) {
+            await recordTelemetry('command_blocked', { tabId, kind, reason: policy?.reason || 'policy', risk: policy?.risk });
+            sendResponse({ ok: false, error: policy?.error || 'Blocked by policy', policy });
+            return;
+          }
+        }
+
+        if (kind === 'navigate') {
+          const url = String(cmd.url || '').trim();
+          if (!url) throw new Error('navigate.url is required');
+          await chrome.tabs.update(tabId, { url });
+          await recordTelemetry('command_executed', { tabId, kind, url, policy: Boolean(policy?.ok) });
+          sendResponse({ ok: true, result: 'navigated ' + url, policy });
+          return;
+        }
+
+        if (kind === 'openTab') {
+          const url = String(cmd.url || '').trim();
+          if (!url) throw new Error('openTab.url is required');
+          const created = await chrome.tabs.create({ url, active: true, openerTabId: tabId });
+          await recordTelemetry('command_executed', { tabId, kind, url, openedTabId: created?.id, policy: Boolean(policy?.ok) });
+          sendResponse({ ok: true, result: 'opened tab ' + url, tabId: created?.id, policy });
+          return;
+        }
+
+        if (kind === 'closeTab') {
+          await chrome.tabs.remove(tabId);
+          await recordTelemetry('command_executed', { tabId, kind, policy: Boolean(policy?.ok) });
+          sendResponse({ ok: true, result: 'closed active tab', policy });
+          return;
+        }
+
+        const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_EXEC', command: cmd });
+        await recordTelemetry(res?.ok === false ? 'command_error' : 'command_executed', {
+          tabId,
+          kind,
+          error: res?.ok === false ? res?.error : undefined,
+          policy: Boolean(policy?.ok)
+        });
+        sendResponse({ ...(res || {}), policy });
+        return;
+      }
+
       if (msg?.type === 'AGNT_TELEMETRY') { await recordTelemetry(msg.eventType || 'generic', msg.data || {}); sendResponse({ ok: true }); return; }
       if (msg?.type === 'AGNT_ANALYZE_TELEMETRY') { const data = await agntFetch('/api/telemetry/browserpilot/analyze', { method: 'POST', body: { limit: msg.limit || 200, context: msg.context || {} } }); sendResponse({ ok: true, data }); return; }
       sendResponse({ ok: true, ignored: true });

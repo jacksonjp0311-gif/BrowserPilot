@@ -46,6 +46,25 @@ This is intentional: BrowserPilot is designed to be a **non-intrusive browser op
 
 ---
 
+## Cyber Snapshot
+
+Cyber Snapshot lets the user manually select a visible page region with an ice-blue overlay and insert extracted text into the BrowserPilot side-panel composer.
+This implementation was transferred from the working `agnt-evo/browser-agents-edge-extension` Cyber Snapshot implementation.
+
+Current capability:
+- Manual user-triggered region capture
+- Cybernetic ice-blue overlay
+- DOM text extraction inside selected viewport rectangle
+- Plain text insertion into the side-panel composer
+- Optional viewport crop preview if available from the transferred implementation
+
+Not yet included unless already present in the source implementation:
+- OCR fallback
+- Semantic element anchoring
+- Autonomous capture
+
+---
+
 ## New AGNT user checklist ✅ (distribution confidence)
 
 Use this when someone installs BrowserPilot on a fresh machine.

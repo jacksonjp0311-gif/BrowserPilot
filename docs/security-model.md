@@ -14,6 +14,15 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 - The AGNT agent is instructed not to use backend browser automation tools.
 - The side panel sends `enabledTools: []` for direct agent chat.
 
+## Cyber Snapshot
+
+- Cyber Snapshot is user-initiated.
+- It captures visible selected page-region content.
+- It inserts extracted text into the side-panel composer for human review.
+- It does not auto-send.
+- It does not capture browser chrome.
+- It is not autonomous tab execution.
+
 ## Modes (and what they mean)
 
 BrowserPilot runs in one of three control modes:

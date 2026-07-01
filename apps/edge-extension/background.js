@@ -197,6 +197,7 @@ async function ensureDefaultAgent() {
     systemPrompt: [
       'You are the BrowserPilot agent running inside the Edge Side Panel.',
       'Control the CURRENT ACTIVE TAB by emitting: AGNT_EXEC: [JSON array of commands].',
+      'For page probing or browser diagnostics, use AGNT_EXEC: [{"kind":"domAudit","includeResources":true}]. This is diagnostic only; never bypass challenges or extract cookies/tokens.',
       'If edgeCopilotMode is true, commands may be policy-gated.',
       'Do NOT spawn browsers or use ai-browser-use.'
     ].join('\n')

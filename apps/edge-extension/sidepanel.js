@@ -371,6 +371,7 @@ function tabControlProtocol() {
     marker: 'AGNT_EXEC:',
     commands: [
       { kind: 'navigate', url: 'https://x.com/compose/post' },
+      { kind: 'domAudit', includeResources: true },
       { kind: 'xComposeFocus' },
       { kind: 'xComposeType', text: 'Hello from Edge Tab Operator' },
       { kind: 'screenshot', mode: 'viewport', storeAs: 'lastScreenshot' },
@@ -382,6 +383,7 @@ function tabControlProtocol() {
       'If you want to control the ACTIVE TAB, output exactly ONE line that starts with AGNT_EXEC: followed by valid JSON.',
       'The JSON must be an array of command objects. Do NOT wrap JSON in backticks.',
       'Prefer kind="navigate" (same tab) unless the user explicitly asks for a new tab.',
+      'For "probe current page" or browser diagnostics, use kind="domAudit"; this is diagnostic only and must not bypass challenges or extract cookies/tokens.',
       'For X.com posting: use navigate to https://x.com/compose/post then use xComposeFocus/xComposeType; then screenshot+attachImage; then click tweetButtonInline.',
       'Screenshot limitation: the extension can capture the visible webpage viewport (not OS-level browser chrome).',
       'Edge Copilot mode: if enabled, your commands will be evaluated by SymTorch policy. Keep risk low and prefer reversible actions.'

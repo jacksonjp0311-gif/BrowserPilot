@@ -49,6 +49,146 @@
     };
   }
 
+  function hashString(input) {
+    let h = 2166136261;
+    const s = String(input || '');
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16).padStart(8, '0');
+  }
+
+  function safeResourceUrl(raw) {
+    try {
+      const u = new URL(String(raw || ''), location.href);
+      return u.origin + u.pathname;
+    } catch {
+      return '';
+    }
+  }
+
+  function runDomAudit(options = {}) {
+    function canvasSignal() {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 220;
+        canvas.height = 60;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return { supported: false };
+        ctx.textBaseline = 'top';
+        ctx.font = '16px Arial';
+        ctx.fillStyle = '#f60';
+        ctx.fillRect(0, 0, 220, 60);
+        ctx.fillStyle = '#069';
+        ctx.fillText('BrowserPilot DOM audit', 8, 8);
+        ctx.strokeStyle = 'rgba(12, 224, 255, 0.55)';
+        ctx.arc(120, 30, 18, 0, Math.PI * 2);
+        ctx.stroke();
+        return { supported: true, hash: hashString(canvas.toDataURL()) };
+      } catch (e) {
+        return { supported: false, error: e?.message || String(e) };
+      }
+    }
+
+    function webglSignal() {
+      try {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (!gl) return { supported: false };
+        const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        return {
+          supported: true,
+          vendor: String(dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR) || ''),
+          renderer: String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) || ''),
+          version: String(gl.getParameter(gl.VERSION) || '')
+        };
+      } catch (e) {
+        return { supported: false, error: e?.message || String(e) };
+      }
+    }
+
+    function challengeIndicators() {
+      const selectors = [
+        'iframe[src*="challenges.cloudflare.com"]',
+        'iframe[src*="turnstile"]',
+        'script[src*="challenges.cloudflare.com"]',
+        'script[src*="turnstile"]',
+        'input[name="cf-turnstile-response"]',
+        '[data-sitekey]',
+        '.cf-turnstile',
+        '#challenge-stage',
+        '#cf-challenge-running'
+      ];
+      const matches = selectors
+        .map((selector) => ({ selector, count: document.querySelectorAll(selector).length }))
+        .filter((item) => item.count > 0);
+      const bodyText = String(document.body?.innerText || '').slice(0, 5000).toLowerCase();
+      const phrases = ['checking your browser', 'verify you are human', 'turnstile', 'cloudflare', 'cf-challenge', 'just a moment']
+        .filter((phrase) => bodyText.includes(phrase));
+      return { detected: matches.length > 0 || phrases.length > 0, matches, phrases };
+    }
+
+    function resourceIndicators() {
+      if (options.includeResources === false) return [];
+      const patterns = /cloudflare|turnstile|cdn-cgi|challenge|cf_chl|cf-ray/i;
+      const entries = performance.getEntriesByType?.('resource') || [];
+      return entries
+        .filter((entry) => patterns.test(entry.name || ''))
+        .slice(-80)
+        .map((entry) => ({
+          name: safeResourceUrl(entry.name),
+          initiatorType: entry.initiatorType || '',
+          durationMs: Number(entry.duration || 0).toFixed(1),
+          transferSize: Number(entry.transferSize || 0)
+        }));
+    }
+
+    function loadedFonts() {
+      try {
+        if (!document.fonts) return [];
+        return Array.from(document.fonts)
+          .map((font) => font.family)
+          .filter(Boolean)
+          .filter((value, idx, arr) => arr.indexOf(value) === idx)
+          .slice(0, 80);
+      } catch {
+        return [];
+      }
+    }
+
+    return {
+      schemaVersion: 'browserpilot.domAudit.v1',
+      capturedAt: new Date().toISOString(),
+      page: { url: location.href, origin: location.origin, title: document.title, readyState: document.readyState },
+      browser: {
+        userAgent: navigator.userAgent || '',
+        platform: navigator.platform || '',
+        languages: Array.from(navigator.languages || []),
+        webdriver: Boolean(navigator.webdriver),
+        hardwareConcurrency: navigator.hardwareConcurrency || null,
+        deviceMemory: navigator.deviceMemory || null,
+        cookieEnabled: Boolean(navigator.cookieEnabled),
+        doNotTrack: navigator.doNotTrack || '',
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+        screen: {
+          width: screen?.width || null,
+          height: screen?.height || null,
+          colorDepth: screen?.colorDepth || null,
+          devicePixelRatio: window.devicePixelRatio || 1
+        }
+      },
+      signals: {
+        canvas: canvasSignal(),
+        webgl: webglSignal(),
+        fonts: loadedFonts(),
+        challenge: challengeIndicators(),
+        resources: resourceIndicators()
+      },
+      policy: { mode: 'diagnostic_only', modifiesPage: false, extractsSecrets: false, solvesChallenges: false }
+    };
+  }
+
   async function openSidePanelWithContext() {
     const context = captureContext();
     const res = await chrome.runtime.sendMessage({ type: 'AGNT_OPEN_SIDEPANEL' });
@@ -122,6 +262,22 @@
               if (el) return el;
             }
             return null;
+          }
+
+          if (kind === 'domAudit') {
+            const audit = runDomAudit({ includeResources: cmd.includeResources !== false });
+            chrome.runtime.sendMessage({
+              type: 'AGNT_TELEMETRY',
+              eventType: 'dom_audit_completed',
+              data: {
+                url: audit.page.url,
+                title: audit.page.title,
+                challengeDetected: audit.signals.challenge.detected,
+                resourceIndicators: audit.signals.resources.length
+              }
+            }).catch(() => {});
+            sendResponse({ ok: true, result: audit });
+            return;
           }
 
           if (kind === 'click') {

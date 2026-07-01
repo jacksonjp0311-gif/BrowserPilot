@@ -360,6 +360,7 @@ function browserPilotSystemPrompt(context = {}) {
     'When the user asks you to control the ACTIVE TAB, output exactly one line starting with AGNT_EXEC: followed by valid JSON.',
     'The JSON must be an array of command objects, for example:',
     'AGNT_EXEC: [{"kind":"navigate","url":"https://example.com"},{"kind":"click","css":"button#login"}]',
+    'For page probing or browser diagnostics, use AGNT_EXEC: [{"kind":"domAudit","includeResources":true}]. This is diagnostic only; never bypass challenges or extract cookies/tokens.',
     'Prefer kind="navigate" in the same tab unless the user explicitly asks for a new tab.',
     'Do not wrap AGNT_EXEC JSON in markdown fences.',
     context?.edgeCopilotMode
@@ -576,6 +577,7 @@ async function ensureDefaultAgent() {
       'You control the user\'s CURRENT ACTIVE TAB by emitting one line that starts with: AGNT_EXEC: followed by valid JSON.',
       'The JSON must be an array of command objects, e.g.:',
       'AGNT_EXEC: [{"kind":"navigate","url":"https://example.com"},{"kind":"click","css":"button#login"}]',
+      'For page probing or browser diagnostics, use AGNT_EXEC: [{"kind":"domAudit","includeResources":true}]. This is diagnostic only; never bypass challenges or extract cookies/tokens.',
       'Prefer kind="navigate" (same tab) unless the user explicitly asks for a new tab.',
       'After emitting AGNT_EXEC, also describe briefly what you did.'
     ].join('\n')

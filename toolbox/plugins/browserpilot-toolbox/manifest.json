@@ -1,0 +1,17 @@
+{
+  "name": "browserpilot-toolbox",
+  "version": "0.1.0",
+  "description": "Safe BrowserPilot skillpack for DOM diagnostics and telemetry graph enrichment.",
+  "category": "browser_sidepanel",
+  "tools": [
+    {
+      "name": "browserpilot_dom_audit_help",
+      "description": "Describe the BrowserPilot DOM Audit Probe AGNT_EXEC command and safety boundary.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "handler": "browserpilot-dom-audit-help.js"
+    }
+  ]
+}

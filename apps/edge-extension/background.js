@@ -193,6 +193,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg?.type === 'AGNT_LIST_AGENTS') { const data = await agntFetch('/api/agents/'); sendResponse({ ok: true, agents: data.agents || [] }); return; }
       if (msg?.type === 'AGNT_ENSURE_DEFAULT_AGENT') { const out = await ensureDefaultAgent(); sendResponse({ ok: true, ...out }); return; }
       if (msg?.type === 'AGNT_CHAT') { const { agentId, message, context } = msg; const resp = await agntAgentChat(agentId, { message, context }); sendResponse({ ok: true, data: { response: resp } }); return; }
+      if (msg?.type === 'AGNT_SEND_AND_MIRROR') {
+        const { agentId, message } = msg;
+        if (!agentId) throw new Error('agentId is required');
+        if (!message || !String(message).trim()) throw new Error('message is required');
+        const response = await agntAgentChat(agentId, {
+          message,
+          history: Array.isArray(msg.history) ? msg.history : [],
+          context: msg.context || {}
+        });
+        sendResponse({ ok: true, response, chatTabId: null, mirrored: false });
+        return;
+      }
+      if (msg?.type === 'AGNT_ABORT_REQUEST') { sendResponse({ ok: true, aborted: false, requestId: msg.requestId || null }); return; }
       if (msg?.type === 'AGNT_EXEC_COMMAND') { const { command, pageContext, edgeCopilot } = msg; const r = await execCommandWithTelemetry(command, pageContext, Boolean(edgeCopilot)); sendResponse(r); return; }
       if (msg?.type === 'AGNT_TELEMETRY') { await recordTelemetry(msg.eventType || 'generic', msg.data || {}); sendResponse({ ok: true }); return; }
       sendResponse({ ok: true, ignored: true });

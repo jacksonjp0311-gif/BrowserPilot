@@ -13,18 +13,21 @@ const els = {
   captureBtn: document.getElementById('captureBtn'),
   actBtn: document.getElementById('actBtn'),
   openAgntBtn: document.getElementById('openAgntBtn'),
+  syncIndicatorBtn: document.getElementById('syncIndicatorBtn'),
+  cleanSlateBtn: document.getElementById('cleanSlateBtn'),
   stopRow: document.getElementById('stopRow'),
   stopBtn: document.getElementById('stopBtn')
 };
 
 const STATE_KEY = 'agnt_sidepanel_state_v1';
-const BRIDGE_CONVERSATION_KEY = 'browserpilot-edge-tab-operator';
+const DEFAULT_BRIDGE_CONVERSATION_KEY = 'browserpilot-edge-tab-operator';
 
 const pending = new Map(); // requestId -> { wrap, body, idx }
 
 let chatLog = []; // persisted
 let jarvisMode = true; // persisted
 let edgeCopilotMode = false; // persisted
+let bridgeConversationKey = DEFAULT_BRIDGE_CONVERSATION_KEY; // persisted
 let _saveTimer = null;
 
 let agents = [];
@@ -50,6 +53,7 @@ function queueSaveState() {
         edgeCopilotMode,
         pageContext,
         targetTabId,
+        bridgeConversationKey,
         chatLog: chatLog.slice(-200) // keep it light
       }
     }).catch(() => {});
@@ -178,10 +182,17 @@ function setHeaderStatus(mode) {
   }
 }
 
+function setCommunicationState(active) {
+  if (!els.syncIndicatorBtn) return;
+  els.syncIndicatorBtn.textContent = active ? 'Backend live' : 'Backend idle';
+  els.syncIndicatorBtn.classList.toggle('communicating', Boolean(active));
+}
+
 function syncStopUI() {
   const hasPending = pending.size > 0;
-  if (els.stopRow) els.stopRow.style.display = hasPending ? 'grid' : 'none';
+  if (els.stopRow) els.stopRow.style.display = 'grid';
   if (els.stopBtn) els.stopBtn.disabled = !hasPending;
+  setCommunicationState(hasPending);
 
   if (!hasPending) {
     activeRequestId = null;
@@ -479,7 +490,7 @@ async function sendMessage(text) {
     history,
     agentId: selectedAgentId,
     agentName: selectedAgentName,
-    bridgeConversationKey: BRIDGE_CONVERSATION_KEY,
+    bridgeConversationKey,
     bridgeConversationTitle: 'BrowserPilot - Edge Tab Operator',
     context,
     pageContext,
@@ -552,6 +563,20 @@ async function openAgntChat() {
   console.log('BrowserPilot: AGNT chat requested (silent mode - no new tab opened)');
 }
 
+function cleanSlate() {
+  for (const requestId of pending.keys()) {
+    bg({ type: 'AGNT_ABORT_REQUEST', requestId }).catch(() => {});
+  }
+  pending.clear();
+  activeRequestId = null;
+  chatLog = [];
+  bridgeConversationKey = `${DEFAULT_BRIDGE_CONVERSATION_KEY}-${Date.now()}`;
+  rebuildFromChatLog();
+  setHeaderStatus(agents.length ? 'linked' : 'idle');
+  syncStopUI();
+  queueSaveState();
+}
+
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === 'AGNT_PAGE_CONTEXT') {
     pageContext = msg.context;
@@ -607,6 +632,7 @@ els.sendBtn.addEventListener('click', () => {
 
 els.suggestBtn.addEventListener('click', () => getSuggestions().catch(e => setError(e.message)));
 if (els.stopBtn) els.stopBtn.addEventListener('click', () => stopCurrent().catch(e => setError(e.message)));
+if (els.cleanSlateBtn) els.cleanSlateBtn.addEventListener('click', () => cleanSlate());
 
 els.input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); els.sendBtn.click(); }
@@ -625,6 +651,7 @@ document.addEventListener('click', (e) => { if (!e.target.closest('.combo')) clo
       edgeCopilotMode = Boolean(saved.edgeCopilotMode);
       pageContext = saved.pageContext || null;
       targetTabId = typeof saved.targetTabId === 'number' ? saved.targetTabId : (pageContext?.browserPilot?.tabId ?? null);
+      bridgeConversationKey = saved.bridgeConversationKey || DEFAULT_BRIDGE_CONVERSATION_KEY;
       chatLog = Array.isArray(saved.chatLog) ? saved.chatLog : [];
       rebuildFromChatLog();
       renderContextHint();

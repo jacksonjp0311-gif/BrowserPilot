@@ -96,6 +96,12 @@
       gap: 12px;
     }
 
+    .statusActions {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
     .brand h1 {
       font-size: 12px;
       margin: 0;
@@ -165,6 +171,25 @@
 
     .btnStop:hover { background: rgba(254, 78, 78, 0.18); border-color: rgba(254, 78, 78, 0.40); }
     .btnStop:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+    .btnMini {
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 11px;
+      line-height: 1;
+    }
+
+    .btnComms {
+      border-color: rgba(25, 239, 131, 0.26);
+      background: rgba(25, 239, 131, 0.08);
+    }
+
+    .btnComms.communicating {
+      border-color: rgba(25, 239, 131, 0.48);
+      background: rgba(25, 239, 131, 0.16);
+      box-shadow: 0 0 0 1px rgba(25,239,131,0.18), 0 0 22px rgba(25,239,131,0.24);
+      animation: dotPulse 900ms ease-in-out infinite;
+    }
 
     .hint {
       font-size: 11px;
@@ -365,7 +390,10 @@
     <div class="panel top">
       <div class="brand">
         <h1>BrowserPilot</h1>
-        <div class="pill" id="connPill"><span class="statusDot" id="statusDot"></span><span id="connText">connecting…</span></div>
+        <div class="statusActions">
+          <div class="pill" id="connPill"><span class="statusDot" id="statusDot"></span><span id="connText">connecting…</span></div>
+          <button id="cleanSlateBtn" class="btnMini" title="Clear the side-panel transcript and start a fresh BrowserPilot thread on the next query. Saved AGNT chats are not deleted.">Clean slate</button>
+        </div>
       </div>
 
       <div class="row">
@@ -380,6 +408,7 @@
         <button id="captureBtn">Capture page</button>
         <button id="actBtn" title="When ON, the agent can emit AGNT_EXEC commands to operate the current tab.">Jarvis: ON</button>
         <button id="openAgntBtn" class="btnAccent">Open AGNT Chat</button>
+        <button id="syncIndicatorBtn" class="btnComms" disabled>Backend idle</button>
       </div>
 
       <div class="hint" id="contextHint">Click the floating “AGNT” button on any page to capture URL + selection. “Capture page” also grabs bounded page text.</div>
@@ -396,7 +425,7 @@
         <button id="suggestBtn">Suggestions</button>
         <button id="sendBtn" class="btnAccent">Send</button>
       </div>
-      <div class="row" id="stopRow" style="display:none">
+      <div class="row" id="stopRow">
         <button id="stopBtn" class="btnStop">Stop</button>
         <div class="hint" style="text-align:right">Stops streaming for the current reply.</div>
       </div>

@@ -555,83 +555,6 @@ async function ensureDefaultAgent() {
   return { created: true, agents: next };
 }
 
-async function openOrFocusAgntChatTab({ activate = false } = {}) {
-  const { agntBaseUrl } = await getSettings();
-  const base = (agntBaseUrl || 'http://localhost:3333').replace(/\/$/, '');
-  const chatUrl = base + '/chat';
-
-  const tabs = await chrome.tabs.query({});
-  const existing = tabs.find((t) => typeof t.url === 'string' && t.url.startsWith(chatUrl));
-
-  if (existing?.id) {
-    if (activate) {
-      await chrome.tabs.update(existing.id, { active: true });
-      if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
-    }
-    return existing.id;
-  }
-
-  const created = await chrome.tabs.create({ url: chatUrl, active: activate });
-  return created.id;
-}
-
-function waitForTabComplete(tabId, timeoutMs = 12000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('Timeout waiting for AGNT chat tab to load'));
-    }, timeoutMs);
-
-    function cleanup() {
-      clearTimeout(timer);
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-    }
-
-    async function onUpdated(id, info) {
-      if (id !== tabId) return;
-      if (info.status === 'complete') {
-        cleanup();
-        resolve();
-      }
-    }
-
-    chrome.tabs.onUpdated.addListener(onUpdated);
-
-    // Fast path: if already complete.
-    chrome.tabs.get(tabId, (tab) => {
-      if (chrome.runtime.lastError) return;
-      if (tab?.status === 'complete') {
-        cleanup();
-        resolve();
-      }
-    });
-  });
-}
-
-async function postMessageIntoAgntChat(tabId, payload) {
-  // Wait until the AGNT Chat screen has mounted the bridge listener.
-  for (let i = 0; i < 24; i++) {
-    try {
-      const [{ result }] = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: () => Boolean(window.__agntExtensionBridgeReady),
-      });
-      if (result) break;
-    } catch {
-      // ignore
-    }
-    await new Promise((r) => setTimeout(r, 250));
-  }
-
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    args: [payload],
-    func: (data) => {
-      window.postMessage(data, '*');
-    },
-  });
-}
-
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     try {
@@ -696,37 +619,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
-      // Canonical bridge: open/focus the real AGNT /chat UI and postMessage a send request into it.
-      // This makes the sidebar "feel" like the same chat surface (same renderer, same theme, same
-      // persistent conversation/memory) instead of duplicating chat logic in the extension.
       if (msg?.type === 'AGNT_OPEN_CHAT_AND_SEND') {
-        const chatTabId = await openOrFocusAgntChatTab({ activate: Boolean(msg.activate) });
-        if (typeof chatTabId !== 'number') throw new Error('Unable to open AGNT chat tab');
-        await waitForTabComplete(chatTabId);
-
-        const payload = {
-          type: 'AGNT_EXTENSION_SEND',
-          source: 'agnt-browser-agents',
-          requestId: msg.requestId || null,
-          message: msg.message,
-          agentId: msg.agentId || null,
-          agentName: msg.agentName || null,
-          bridgeConversationKey: msg.bridgeConversationKey || (msg.agentId ? `browserpilot-agent-${msg.agentId}` : 'browserpilot-default'),
-          bridgeConversationTitle: msg.bridgeConversationTitle || 'BrowserPilot',
-          pageContext: msg.pageContext || null,
-          at: new Date().toISOString(),
-        };
-
-        // Post twice with a small delay to avoid the "Vue mounted after tab complete" race.
-        await postMessageIntoAgntChat(chatTabId, payload);
-        setTimeout(() => { postMessageIntoAgntChat(chatTabId, payload).catch(() => {}); }, 600);
-
-        sendResponse({ ok: true, tabId: chatTabId });
+        sendResponse({ ok: true, tabId: null, disabled: true, reason: 'BrowserPilot side-panel chat no longer opens AGNT tabs automatically.' });
         return;
       }
 
-      // Side panel UX: return an immediate agent response for the sidebar,
-      // while also mirroring the same user message into the canonical AGNT /chat.
+      // Side panel UX: return an immediate agent response without opening AGNT tabs.
       if (msg?.type === 'AGNT_SEND_AND_MIRROR') {
         const agentId = msg.agentId;
         const message = msg.message;
@@ -760,35 +658,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
 
-        // Mirror best-effort (do not block agent response on this)
-        const mirrorPromise = (async () => {
-          try {
-            const chatTabId = await openOrFocusAgntChatTab({ activate: false });
-            if (typeof chatTabId !== 'number') return null;
-            await waitForTabComplete(chatTabId);
-
-            const payload = {
-              type: 'AGNT_EXTENSION_SEND',
-              source: 'agnt-browser-agents',
-              requestId: msg.requestId || null,
-              message,
-              agentId,
-              agentName,
-              bridgeConversationKey,
-              bridgeConversationTitle,
-              pageContext,
-              at: new Date().toISOString(),
-            };
-
-            await postMessageIntoAgntChat(chatTabId, payload);
-            setTimeout(() => { postMessageIntoAgntChat(chatTabId, payload).catch(() => {}); }, 600);
-            return chatTabId;
-          } catch {
-            return null;
-          }
-        })();
-
-        // Sidebar response (SSE-streamed; we forward deltas into the side panel so it matches AGNT app behavior)
+        // Direct sidebar response only. Do not open AGNT /chat automatically:
+        // tab creation can steal focus in some browsers even when active:false.
         const rid = msg.requestId || null;
         const controller = rid ? new AbortController() : null;
         if (rid && controller) abortControllers.set(rid, controller);
@@ -804,8 +675,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (rid) abortControllers.delete(rid);
         }
 
-        const chatTabId = await mirrorPromise;
-        sendResponse({ ok: true, response, chatTabId });
+        sendResponse({ ok: true, response, chatTabId: null, mirrored: false });
         return;
       }
 

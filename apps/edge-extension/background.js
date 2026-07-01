@@ -101,16 +101,27 @@ async function recordTabTelemetry(eventType, tab) {
 }
 
 // --- Silent AGNT Messaging (no new tabs) ---
+const CHAT_FETCH_TIMEOUT_MS = 85000;
+
 async function agntAgentChat(agentId, { message, context = {}, history = [] }) {
   const { agntBaseUrl, agntToken } = await getSettings();
   const url = agntBaseUrl.replace(/\/$/, '') + `/api/agents/${encodeURIComponent(agentId)}/chat`;
   const headers = { 'Content-Type': 'application/json' };
   if (agntToken) headers['Authorization'] = 'Bearer ' + agntToken;
-  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ message, history, context, enabledTools: [] }) });
-  const text = await res.text();
-  let json; try { json = JSON.parse(text); } catch { json = { _raw: text }; }
-  if (!res.ok) throw new Error(json?.error || json?.details || json?._raw || `HTTP ${res.status}`);
-  return json?.response || json?.result || text;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CHAT_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ message, history, context, enabledTools: [] }), signal: controller.signal });
+    const text = await res.text();
+    let json; try { json = JSON.parse(text); } catch { json = { _raw: text }; }
+    if (!res.ok) throw new Error(json?.error || json?.details || json?._raw || `HTTP ${res.status}`);
+    return json?.response || json?.result || text;
+  } catch (e) {
+    if (e?.name === 'AbortError') throw new Error('BrowserPilot sync timed out while waiting for AGNT.');
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // --- Command Execution with Telemetry ---

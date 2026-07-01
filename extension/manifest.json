@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BrowserPilot",
-  "version": "0.1.13",
-  "version_name": "0.1.13 sync bubble fix",
+  "version": "0.1.14",
+  "version_name": "0.1.14 sync reliability fix",
   "description": "Let an AGNT agent understand and operate the browser tab you are already using.",
   "action": {
     "default_title": "BrowserPilot",

@@ -21,6 +21,7 @@ const els = {
 
 const STATE_KEY = 'agnt_sidepanel_state_v1';
 const DEFAULT_BRIDGE_CONVERSATION_KEY = 'browserpilot-edge-tab-operator';
+const CHAT_SYNC_TIMEOUT_MS = 90000;
 
 const pending = new Map(); // requestId -> { wrap, body, idx }
 
@@ -77,15 +78,12 @@ function setError(msg) {
 
 function scrollMessagesToBottom() {
   const scroll = () => {
-    const last = els.msgs?.lastElementChild;
-    if (last?.scrollIntoView) {
-      last.scrollIntoView({ block: 'end', inline: 'nearest' });
-    } else if (els.msgs) {
-      els.msgs.scrollTop = els.msgs.scrollHeight;
-    }
+    if (!els.msgs) return;
+    els.msgs.scrollTop = els.msgs.scrollHeight;
   };
   requestAnimationFrame(scroll);
   setTimeout(scroll, 80);
+  setTimeout(scroll, 220);
 }
 
 function pushMsg(role, content, extraClass = '', metaInfo = {}) {
@@ -228,6 +226,14 @@ function updatePending(requestId, content, done = false) {
 
 async function bg(msg) {
   return await chrome.runtime.sendMessage(msg);
+}
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 function pageContextStats(ctx = pageContext) {
@@ -508,18 +514,26 @@ async function sendMessage(text) {
   // Side-panel chat call:
   // - returns an immediate agent response for the sidebar bubble
   // - does NOT open/focus any AGNT /chat tabs
-  const res = await bg({
-    type: 'AGNT_SEND_AND_MIRROR',
-    requestId,
-    message: text,
-    history,
-    agentId: selectedAgentId,
-    agentName: selectedAgentName,
-    bridgeConversationKey,
-    bridgeConversationTitle: 'BrowserPilot - Edge Tab Operator',
-    context,
-    pageContext,
-  });
+  let res;
+  try {
+    res = await withTimeout(bg({
+      type: 'AGNT_SEND_AND_MIRROR',
+      requestId,
+      message: text,
+      history,
+      agentId: selectedAgentId,
+      agentName: selectedAgentName,
+      bridgeConversationKey,
+      bridgeConversationTitle: 'BrowserPilot - Edge Tab Operator',
+      context,
+      pageContext,
+    }), CHAT_SYNC_TIMEOUT_MS, 'BrowserPilot sync');
+  } catch (e) {
+    await bg({ type: 'AGNT_ABORT_REQUEST', requestId }).catch(() => {});
+    setHeaderStatus('linked');
+    updatePending(requestId, `Sync failed: ${e?.message || String(e)}\n\nCheck AGNT is running at http://localhost:3333, then press Refresh and try again.`, true);
+    return;
+  }
 
   if (!res?.ok) {
     setHeaderStatus('linked');

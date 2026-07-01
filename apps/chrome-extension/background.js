@@ -194,6 +194,7 @@ async function evaluateEdgeCopilotPolicy(cmd, pageContext = null) {
 }
 
 // --- Abort / Stop support ---
+const CHAT_FETCH_TIMEOUT_MS = 85000;
 const abortControllers = new Map(); // requestId -> AbortController
 
 // --- Agent chat SSE helpers ---
@@ -214,8 +215,17 @@ function parseSSEAssistantFromText(raw) {
     let payload = null;
     try { payload = JSON.parse(dataStr); } catch { payload = null; }
 
-    if (ev === 'content_delta' && payload?.accumulated != null) {
+    if ((ev === 'content_delta' || ev === 'final_content') && payload?.accumulated != null) {
       lastAccumulated = String(payload.accumulated);
+    }
+    if (ev === 'content_delta' && payload?.delta != null) {
+      lastAccumulated += String(payload.delta);
+    }
+    if (payload?.content != null && (ev === 'content_delta' || ev === 'final_content' || ev === 'message')) {
+      lastAccumulated = String(payload.content);
+    }
+    if (payload?.response != null) {
+      lastAccumulated = String(payload.response);
     }
     if (ev === 'assistant_message' && payload?.content) {
       // Some backends may emit final content here (non-delta mode)
@@ -225,12 +235,40 @@ function parseSSEAssistantFromText(raw) {
   return lastAccumulated;
 }
 
+function combineAbortSignals(...signals) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  for (const signal of signals.filter(Boolean)) {
+    if (signal.aborted) {
+      controller.abort();
+      break;
+    }
+    signal.addEventListener('abort', abort, { once: true });
+  }
+  return controller.signal;
+}
+
 async function agntAgentChat(agentId, { message, context = {}, history = [] }, { requestId, streamToExtension = false, signal } = {}) {
   const { agntBaseUrl, agntToken } = await getSettings();
   const url = agntBaseUrl.replace(/\/$/, '') + `/api/agents/${encodeURIComponent(agentId)}/chat`;
 
   const headers = { 'Content-Type': 'application/json' };
   if (agntToken) headers['Authorization'] = 'Bearer ' + agntToken;
+
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), CHAT_FETCH_TIMEOUT_MS);
+  const fetchSignal = combineAbortSignals(signal, timeoutController.signal);
+
+  const emit = (content, done = false, error = null) => {
+    if (!streamToExtension || !requestId) return;
+    chrome.runtime.sendMessage({
+      type: 'AGNT_EXTENSION_RESPONSE',
+      requestId,
+      content,
+      error,
+      done
+    }).catch(() => {});
+  };
 
   let res;
   try {
@@ -242,17 +280,18 @@ async function agntAgentChat(agentId, { message, context = {}, history = [] }, {
       // (ai-browser-use) to this chat surface. The side panel drives the active
       // Edge tab via AGNT_EXEC instead.
       body: JSON.stringify({ message, history, context, enabledTools: [] }),
-      signal
+      signal: fetchSignal
     });
   } catch (e) {
     if (e?.name === 'AbortError') {
       // Stopped before the request was established.
-      if (streamToExtension && requestId) {
-        chrome.runtime.sendMessage({ type: 'AGNT_EXTENSION_RESPONSE', requestId, content: '[stopped]', done: true }).catch(() => {});
-      }
+      const timedOut = timeoutController.signal.aborted && !signal?.aborted;
+      emit(timedOut ? '[sync timed out]' : '[stopped]', true, timedOut ? 'BrowserPilot sync timed out before a response was established.' : null);
       return '';
     }
     throw e;
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (!res.ok) {
@@ -269,16 +308,7 @@ async function agntAgentChat(agentId, { message, context = {}, history = [] }, {
     const dec = new TextDecoder('utf-8');
     let buf = '';
     let lastAccumulated = '';
-
-    const emit = (content, done = false) => {
-      if (!streamToExtension || !requestId) return;
-      chrome.runtime.sendMessage({
-        type: 'AGNT_EXTENSION_RESPONSE',
-        requestId,
-        content,
-        done
-      }).catch(() => {});
-    };
+    const streamTimeout = setTimeout(() => timeoutController.abort(), CHAT_FETCH_TIMEOUT_MS);
 
     try {
       while (true) {
@@ -311,23 +341,46 @@ async function agntAgentChat(agentId, { message, context = {}, history = [] }, {
           let payload = null;
           try { payload = JSON.parse(dataStr); } catch { payload = null; }
 
-          if (ev === 'content_delta' && payload?.accumulated != null) {
+          if ((ev === 'content_delta' || ev === 'final_content') && payload?.accumulated != null) {
             lastAccumulated = String(payload.accumulated);
+            emit(lastAccumulated, ev === 'final_content');
+          }
+          if (ev === 'content_delta' && payload?.delta != null) {
+            lastAccumulated += String(payload.delta);
+            emit(lastAccumulated, false);
+          }
+          if (payload?.content != null && (ev === 'content_delta' || ev === 'final_content' || ev === 'message')) {
+            lastAccumulated = String(payload.content);
+            emit(lastAccumulated, ev === 'final_content');
+          }
+          if (payload?.response != null) {
+            lastAccumulated = String(payload.response);
             emit(lastAccumulated, false);
           }
           if (ev === 'assistant_message' && payload?.content) {
             lastAccumulated = String(payload.content);
             emit(lastAccumulated, false);
           }
+          if (ev === 'error' && payload?.error) {
+            throw new Error(String(payload.error));
+          }
+          if (ev === 'done' || ev === 'complete' || ev === 'final_content') {
+            try { await reader.cancel(); } catch {}
+            emit(lastAccumulated, true);
+            return lastAccumulated;
+          }
         }
       }
     } catch (e) {
       if (e?.name === 'AbortError') {
         // Stopped mid-stream.
-        emit(lastAccumulated ? (lastAccumulated + "\n\n[stopped]") : '[stopped]', true);
+        const timedOut = timeoutController.signal.aborted && !signal?.aborted;
+        emit(lastAccumulated ? (lastAccumulated + (timedOut ? "\n\n[sync timed out]" : "\n\n[stopped]")) : (timedOut ? '[sync timed out]' : '[stopped]'), true, timedOut ? 'BrowserPilot sync timed out while streaming.' : null);
         return lastAccumulated || '';
       }
       throw e;
+    } finally {
+      clearTimeout(streamTimeout);
     }
 
     // Final flush: parse any residual buffered SSE text

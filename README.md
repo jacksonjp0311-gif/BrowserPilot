@@ -65,6 +65,20 @@ Not yet included unless already present in the source implementation:
 
 ---
 
+## Context Radar
+
+Context Radar adds a manual, DOM-first HUD that scans the visible page for likely context targets and draws glowing green boxes over readable items such as posts, tables, forms, code blocks, status panels, and composers.
+
+Current capability:
+- Manual user-triggered scan from the side panel
+- Semi-transparent Browser Pilot HUD
+- Green target boxes with hover previews
+- Click-to-capture target text into the composer
+- Structured target metadata for agent context
+- No auto-send and no autonomous page action
+
+---
+
 ## New AGNT user checklist ✅ (distribution confidence)
 
 Use this when someone installs BrowserPilot on a fresh machine.

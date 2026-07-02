@@ -528,6 +528,277 @@
     setBox(getBoxRect());
   }
 
+  function labelForContextElement(el) {
+    const tag = (el.tagName || '').toLowerCase();
+    const role = String(el.getAttribute('role') || '').toLowerCase();
+    const cls = String(el.className || '').toLowerCase();
+    const text = String(el.innerText || '').toLowerCase();
+    if (tag === 'form' || role === 'form') return 'form';
+    if (tag === 'table' || role === 'table') return 'table';
+    if (role === 'textbox' || el.isContentEditable || tag === 'textarea' || tag === 'input') return 'composer';
+    if (tag === 'article' || role === 'article') return 'post';
+    if (/error|warning|alert|failed|blocked/.test(cls + ' ' + text)) return 'status';
+    if (tag === 'pre' || tag === 'code') return 'code';
+    if (/price|total|cost|\$/.test(cls + ' ' + text)) return 'price';
+    if (tag === 'button' || role === 'button') return 'action';
+    if (/comment|reply/.test(cls)) return 'comment';
+    if (/card|result|item/.test(cls)) return 'result';
+    if (/^h[1-3]$/.test(tag)) return 'heading';
+    if (tag === 'main' || tag === 'section') return 'section';
+    return 'context';
+  }
+
+  function confidenceForContextElement(el, rect, text, label) {
+    const area = rect.width * rect.height;
+    let score = 0.2;
+    if (text.length > 40) score += 0.18;
+    if (text.length > 160) score += 0.16;
+    if (area > 9000) score += 0.12;
+    if (area < window.innerWidth * window.innerHeight * 0.7) score += 0.10;
+    if (['post', 'table', 'form', 'composer', 'status', 'code', 'price'].includes(label)) score += 0.22;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = Math.abs(cx - window.innerWidth / 2) / Math.max(1, window.innerWidth / 2);
+    const dy = Math.abs(cy - window.innerHeight / 2) / Math.max(1, window.innerHeight / 2);
+    score += Math.max(0, 0.12 - (dx + dy) * 0.04);
+    return Math.max(0.25, Math.min(0.98, score));
+  }
+
+  function contextCapabilities(label) {
+    const base = ['captureText', 'captureImage', 'watch'];
+    if (label === 'composer' || label === 'form') return [...base, 'useTarget'];
+    if (label === 'table') return [...base, 'extractTable'];
+    if (label === 'post' || label === 'comment') return [...base, 'draftReply'];
+    return base;
+  }
+
+  function detectContextTargets(limit = 18) {
+    const selectors = [
+      'article', '[role="article"]', 'main', 'section', 'form', 'table',
+      '[role="textbox"]', '[contenteditable="true"]', 'textarea', 'input',
+      '[role="dialog"]', '[role="alert"]', 'pre', 'code',
+      'h1', 'h2', 'h3', 'li', '[class*="card"]', '[class*="post"]',
+      '[class*="comment"]', '[class*="reply"]', '[class*="result"]',
+      '[class*="price"]', '[class*="error"]'
+    ];
+    const seen = new Set();
+    const viewport = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+    const candidates = [];
+
+    for (const el of document.querySelectorAll(selectors.join(','))) {
+      if (!(el instanceof HTMLElement) || seen.has(el)) continue;
+      seen.add(el);
+      if (el.id === ID || el.closest('#agnt-context-radar-root, #agnt-cyber-snapshot-root')) continue;
+      const rect = el.getBoundingClientRect();
+      if (!rectsIntersect(rect, viewport)) continue;
+      if (rect.width < 60 || rect.height < 28) continue;
+      if (rect.width > window.innerWidth * 0.98 && rect.height > window.innerHeight * 0.82) continue;
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue;
+      const text = String(el.innerText || el.value || '').replace(/\s+/g, ' ').trim();
+      if (text.length < 8 && !['input', 'textarea', 'button'].includes((el.tagName || '').toLowerCase())) continue;
+      const label = labelForContextElement(el);
+      const confidence = confidenceForContextElement(el, rect, text, label);
+      candidates.push({
+        el,
+        label,
+        confidence,
+        text,
+        rect: {
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          viewportWidth: Math.round(window.innerWidth || 0),
+          viewportHeight: Math.round(window.innerHeight || 0),
+          scrollX: Math.round(window.scrollX || 0),
+          scrollY: Math.round(window.scrollY || 0)
+        },
+        why: [
+          `tag=${(el.tagName || '').toLowerCase()}`,
+          el.getAttribute('role') ? `role=${el.getAttribute('role')}` : '',
+          text.length > 160 ? 'high text density' : 'visible text',
+          'visible in viewport'
+        ].filter(Boolean)
+      });
+    }
+
+    candidates.sort((a, b) => b.confidence - a.confidence);
+    const picked = [];
+    for (const item of candidates) {
+      const overlaps = picked.some((p) => {
+        const a = { left: item.rect.x, top: item.rect.y, right: item.rect.x + item.rect.width, bottom: item.rect.y + item.rect.height };
+        const b = { left: p.rect.x, top: p.rect.y, right: p.rect.x + p.rect.width, bottom: p.rect.y + p.rect.height };
+        const ix = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+        const iy = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+        const overlap = ix * iy;
+        return overlap > Math.min(item.rect.width * item.rect.height, p.rect.width * p.rect.height) * 0.72;
+      });
+      if (!overlaps) picked.push(item);
+      if (picked.length >= limit) break;
+    }
+    return picked;
+  }
+
+  function startContextRadarOverlay() {
+    const existing = document.getElementById('agnt-context-radar-root');
+    if (existing) existing.remove();
+
+    const targets = detectContextTargets(18);
+    const root = document.createElement('div');
+    root.id = 'agnt-context-radar-root';
+    root.innerHTML = `
+      <div class="radar-summary"><b>Browser Pilot</b><span>Context Radar: ${targets.length} targets</span><em>Esc cancels</em></div>
+      <div class="radar-hud" hidden></div>
+    `;
+    const css = document.createElement('style');
+    css.textContent = `
+      #agnt-context-radar-root {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483645;
+        pointer-events: none;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      }
+      #agnt-context-radar-root .radar-summary {
+        position: fixed;
+        left: 18px;
+        top: 18px;
+        display: grid;
+        gap: 2px;
+        padding: 10px 12px;
+        border: 1px solid rgba(25,239,131,0.42);
+        border-radius: 10px;
+        color: rgba(236,255,247,0.96);
+        background: rgba(3, 12, 18, 0.82);
+        box-shadow: 0 0 28px rgba(25,239,131,0.18);
+        backdrop-filter: blur(10px);
+      }
+      #agnt-context-radar-root .radar-summary b {
+        color: #19ef83;
+        letter-spacing: 0.10em;
+        text-transform: uppercase;
+        font-size: 12px;
+      }
+      #agnt-context-radar-root .radar-summary span { font-size: 12px; color: #dfffee; }
+      #agnt-context-radar-root .radar-summary em { font-size: 10px; color: rgba(18,224,255,0.72); font-style: normal; }
+      #agnt-context-radar-root .radar-box {
+        position: fixed;
+        pointer-events: auto;
+        border: 1px solid rgba(25,239,131,0.78);
+        background: rgba(25,239,131,0.07);
+        box-shadow: 0 0 0 1px rgba(25,239,131,0.16) inset, 0 0 20px rgba(25,239,131,0.22);
+        cursor: crosshair;
+        border-radius: 8px;
+      }
+      #agnt-context-radar-root .radar-box:hover {
+        border-color: rgba(18,224,255,0.95);
+        background: rgba(18,224,255,0.10);
+        box-shadow: 0 0 0 1px rgba(18,224,255,0.28) inset, 0 0 28px rgba(18,224,255,0.28);
+      }
+      #agnt-context-radar-root .radar-tag {
+        position: absolute;
+        left: 6px;
+        top: -22px;
+        padding: 3px 6px;
+        border-radius: 6px;
+        background: rgba(2, 14, 18, 0.90);
+        border: 1px solid rgba(25,239,131,0.45);
+        color: #dfffee;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      #agnt-context-radar-root .radar-hud {
+        position: fixed;
+        max-width: 310px;
+        padding: 10px 12px;
+        border: 1px solid rgba(25,239,131,0.45);
+        border-radius: 10px;
+        color: #effff8;
+        background: rgba(4, 10, 18, 0.86);
+        box-shadow: 0 0 30px rgba(25,239,131,0.20);
+        backdrop-filter: blur(12px);
+        font-size: 12px;
+        line-height: 1.35;
+        pointer-events: none;
+      }
+      #agnt-context-radar-root .radar-hud strong { color: #19ef83; letter-spacing: 0.08em; text-transform: uppercase; }
+      #agnt-context-radar-root .radar-hud .preview { color: rgba(255,255,255,0.82); margin-top: 6px; }
+      #agnt-context-radar-root .radar-hud .actions { color: rgba(18,224,255,0.78); margin-top: 8px; }
+    `;
+    root.appendChild(css);
+
+    const hud = root.querySelector('.radar-hud');
+    function finish(cancelled = false) {
+      document.removeEventListener('keydown', onKey, true);
+      if (cancelled) chrome.runtime.sendMessage({ type: 'BROWSERPILOT_CONTEXT_RADAR_CAPTURED', cancelled: true }).catch(() => {});
+      root.remove();
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(true);
+      }
+    }
+
+    targets.forEach((target, idx) => {
+      const box = document.createElement('button');
+      box.type = 'button';
+      box.className = 'radar-box';
+      box.style.left = target.rect.x + 'px';
+      box.style.top = target.rect.y + 'px';
+      box.style.width = target.rect.width + 'px';
+      box.style.height = target.rect.height + 'px';
+      box.innerHTML = `<span class="radar-tag">${target.label} ${Math.round(target.confidence * 100)}%</span>`;
+
+      box.addEventListener('mouseenter', () => {
+        hud.hidden = false;
+        hud.style.left = Math.min(window.innerWidth - 330, target.rect.x + 10) + 'px';
+        hud.style.top = Math.min(window.innerHeight - 150, target.rect.y + target.rect.height + 10) + 'px';
+        hud.innerHTML = [
+          `<strong>${target.label} · ${Math.round(target.confidence * 100)}%</strong>`,
+          `<div class="preview">${(target.text || '(no text preview)').slice(0, 260)}</div>`,
+          `<div class="actions">Click to capture · read-only · ${contextCapabilities(target.label).join(' / ')}</div>`
+        ].join('');
+      });
+      box.addEventListener('mouseleave', () => { hud.hidden = true; });
+      box.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const fullText = String(target.el.innerText || target.el.value || target.text || '').replace(/\s+/g, ' ').trim().slice(0, 12000);
+        chrome.runtime.sendMessage({
+          type: 'BROWSERPILOT_CONTEXT_RADAR_CAPTURED',
+          target: {
+            id: `ctx_${idx + 1}`,
+            label: target.label,
+            confidence: Number(target.confidence.toFixed(2)),
+            risk: 'read_only',
+            rect: target.rect,
+            page: { url: location.href, title: document.title },
+            text: fullText,
+            textPreview: fullText.slice(0, 320),
+            capabilities: contextCapabilities(target.label),
+            why: target.why,
+            selectorHints: {
+              tag: (target.el.tagName || '').toLowerCase(),
+              role: target.el.getAttribute('role') || '',
+              id: target.el.id || '',
+              textHash: hashString(fullText)
+            }
+          }
+        }).catch(() => {});
+        finish(false);
+      });
+      root.appendChild(box);
+    });
+
+    document.documentElement.appendChild(root);
+    document.addEventListener('keydown', onKey, true);
+  }
+
   async function openSidePanelWithContext() {
     const context = captureContext();
     const res = await chrome.runtime.sendMessage({ type: 'AGNT_OPEN_SIDEPANEL' });
@@ -572,6 +843,12 @@
         if (msg?.type === 'AGNT_STOP_REGION_WATCH' || msg?.type === 'BROWSERPILOT_STOP_REGION_WATCH') {
           stopCyberRegionWatch();
           sendResponse({ ok: true, watching: false });
+          return;
+        }
+
+        if (msg?.type === 'BROWSERPILOT_START_CONTEXT_RADAR') {
+          startContextRadarOverlay();
+          sendResponse({ ok: true, started: true });
           return;
         }
 

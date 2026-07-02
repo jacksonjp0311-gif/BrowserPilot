@@ -23,6 +23,15 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 - It does not capture browser chrome.
 - It is not autonomous tab execution.
 
+## Context Radar
+
+- Context Radar is user-initiated.
+- It highlights likely visible page context items with a semi-transparent HUD.
+- It captures text only after the user clicks a highlighted target.
+- It inserts captured target text and metadata into the composer for human review.
+- It does not auto-send.
+- It does not click, type, submit, or execute `AGNT_EXEC`.
+
 ## Modes (and what they mean)
 
 BrowserPilot runs in one of three control modes:

@@ -13,6 +13,7 @@ const els = {
   captureBtn: document.getElementById('captureBtn'),
   cyberSnapshotBtn: document.getElementById('cyberSnapshotBtn'),
   watchRegionBtn: document.getElementById('watchRegionBtn'),
+  contextRadarBtn: document.getElementById('contextRadarBtn'),
   actBtn: document.getElementById('actBtn'),
   openAgntBtn: document.getElementById('openAgntBtn'),
   syncIndicatorBtn: document.getElementById('syncIndicatorBtn'),
@@ -42,6 +43,7 @@ let targetTabId = null;
 let activeRequestId = null;
 let lastCyberSnapshot = null;
 let regionWatchActive = false;
+let lastRadarTarget = null;
 
 function timeLabel(ts = Date.now()) {
   const d = new Date(ts);
@@ -820,6 +822,78 @@ async function toggleRegionWatch() {
   pushMsg('assistant', '[cyber watch] watching the last Cyber Snapshot region for text changes.');
 }
 
+async function startContextRadar() {
+  setError(null);
+  const res = await bg({ type: 'BROWSERPILOT_START_CONTEXT_RADAR', tabId: targetTabId });
+  if (!res?.ok) throw new Error(res?.error || 'Context Radar failed to start');
+  if (typeof res.tabId === 'number') targetTabId = res.tabId;
+  await telemetry('context_radar_started', pageContextStats());
+  pushMsg('assistant', [
+    '[context radar] scanning visible page targets.',
+    'Hover a green box to inspect it.',
+    'Click a box to insert its text into the composer.',
+    'Press Esc to cancel.'
+  ].join('\n'));
+}
+
+function handleContextRadarCapture(msg) {
+  if (msg?.cancelled) {
+    telemetry('context_radar_cancelled', pageContextStats()).catch(() => {});
+    pushMsg('assistant', '[context radar] cancelled');
+    return;
+  }
+
+  const target = msg?.target || {};
+  const text = String(target.text || '').trim();
+  lastRadarTarget = target;
+  pageContext = {
+    ...(pageContext || {}),
+    page: target.page || pageContext?.page || null,
+    selection: text.slice(0, 8000),
+    pageText: pageContext?.pageText || '',
+    contextRadarTarget: target
+  };
+  if (typeof msg.tabId === 'number') targetTabId = msg.tabId;
+  renderContextHint();
+  queueSaveState();
+
+  telemetry('context_radar_target_captured', {
+    ...pageContextStats(),
+    targetLabel: target.label || 'context',
+    confidence: target.confidence || null,
+    textChars: text.length,
+    rect: target.rect || null,
+    capabilities: target.capabilities || []
+  }).catch(() => {});
+
+  const objectBlock = [
+    '[Context Radar Target]',
+    JSON.stringify({
+      id: target.id || null,
+      label: target.label || 'context',
+      confidence: target.confidence || null,
+      risk: target.risk || 'read_only',
+      capabilities: target.capabilities || ['captureText'],
+      why: target.why || [],
+      rect: target.rect || null,
+      textPreview: target.textPreview || text.slice(0, 240)
+    }, null, 2),
+    '',
+    '[Context Radar Text Inserted]',
+    text || '(No text found in selected target.)'
+  ].join('\n');
+
+  pushMsg('assistant', [
+    '[context radar] Target captured.',
+    `Label: ${target.label || 'context'} | Confidence: ${Math.round(Number(target.confidence || 0) * 100)}%`,
+    text ? text.slice(0, 1200) : '(No text found in selected target.)'
+  ].join('\n'));
+
+  const current = els.input.value.trim();
+  els.input.value = current ? `${current}\n\n${objectBlock}` : objectBlock;
+  els.input.focus();
+}
+
 async function openAgntChat() {
   // Sidepanel-only mode:
   // - Never open/focus/create any AGNT (/chat) tabs
@@ -879,6 +953,10 @@ chrome.runtime.onMessage.addListener((msg) => {
     pushMsg('assistant', summary);
   }
 
+  if (msg?.type === 'BROWSERPILOT_CONTEXT_RADAR_CAPTURED') {
+    handleContextRadarCapture(msg);
+  }
+
   // Echo/stream from AGNT agent chat (SSE) back into the sidebar placeholder.
   // Background will send {done:false} updates during SSE streaming, and a final {done:true}.
   if (msg?.type === 'AGNT_EXTENSION_RESPONSE') {
@@ -903,6 +981,7 @@ els.refreshBtn.addEventListener('click', () => ensureAndLoadAgents().catch(e => 
 els.captureBtn.addEventListener('click', () => captureActiveTab().catch(e => setError(e.message)));
 if (els.cyberSnapshotBtn) els.cyberSnapshotBtn.addEventListener('click', () => startCyberSnapshot().catch(e => setError(e.message)));
 if (els.watchRegionBtn) els.watchRegionBtn.addEventListener('click', () => toggleRegionWatch().catch(e => setError(e.message)));
+if (els.contextRadarBtn) els.contextRadarBtn.addEventListener('click', () => startContextRadar().catch(e => setError(e.message)));
 if (els.actBtn) els.actBtn.addEventListener('click', () => {
   // Cycle: OFF -> Jarvis -> Edge Copilot -> OFF
   if (!jarvisMode) {

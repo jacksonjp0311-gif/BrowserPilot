@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>BrowserPilot QA - iframe form</title>
+<!-- expected: risk medium/high; categories iframe >= 1 and credential_form >= 1 -->
+<main>
+  <h1>Iframe + Credential Form QA</h1>
+  <iframe src="https://example.invalid/embed" style="width:320px;height:160px"></iframe>
+  <form action="https://example.invalid/collect">
+    <label>Password <input type="password" name="password"></label>
+    <label>API key <input name="api_key"></label>
+    <button>Submit</button>
+  </form>
+</main>

@@ -1128,6 +1128,14 @@
         if (value.includes('.')) {
           const parts = value.split('.').map(Number);
           if (parts.length !== 4 || parts.some((part) => Number.isNaN(part) || part < 0 || part > 255)) continue;
+        } else {
+          if ((value.match(/::/g) || []).length > 1) continue;
+          if (/[^0-9a-f:.]/i.test(value) || value.includes(':::')) continue;
+          const hasCompression = value.includes('::');
+          const groups = value.split(':').filter(Boolean);
+          if (!hasCompression && groups.length !== 8 && groups.length < 3) continue;
+          if (groups.length > 8) continue;
+          if (groups.some((part) => part.length > 4 || !/^[0-9a-f]{1,4}$/i.test(part))) continue;
         }
         const idx = match.index || 0;
         found.push({
@@ -1135,6 +1143,7 @@
           version: value.includes(':') ? 'ipv6' : 'ipv4',
           classification: classifyIpAddress(value),
           sourceField,
+          indicatorType: 'extracted',
           redactedContext: raw.slice(Math.max(0, idx - 70), Math.min(raw.length, idx + String(match[0]).length + 70)).replace(/\s+/g, ' ').trim(),
           confidence: 'extracted_from_text'
         });
@@ -1197,25 +1206,46 @@
   }
 
   function scoreThreatFindings(findings, ipIndicators) {
-    let score = 0;
+    const categoryCaps = {
+      hidden_prompt: 0.35,
+      overlay: 0.30,
+      credential_form: 0.25,
+      link_mismatch: 0.25,
+      iframe: 0.20,
+      inline_handler: 0.15
+    };
+    const categoryScores = {};
     for (const f of findings) {
-      if (f.category === 'hidden_prompt') score += 0.35;
-      if (f.category === 'overlay') score += 0.30;
-      if (f.category === 'credential_form') score += 0.25;
-      if (f.category === 'link_mismatch') score += 0.15;
-      if (f.category === 'iframe') score += 0.15;
-      if (f.category === 'inline_handler') score += 0.10;
+      const cap = categoryCaps[f.category] || 0;
+      if (!cap) continue;
+      const severityFactor = f.severity === 'high' ? 1 : (f.severity === 'medium' ? 0.72 : 0.45);
+      categoryScores[f.category] = Math.max(categoryScores[f.category] || 0, cap * severityFactor);
     }
-    if (ipIndicators.some((item) => item.classification === 'public') && findings.some((f) => f.category === 'hidden_prompt')) score += 0.15;
-    if (ipIndicators.length && !ipIndicators.some((item) => item.classification === 'public')) score += 0.03;
-    score = Math.max(0, Math.min(1, score));
+    const publicIpCorrelated = ipIndicators.some((item) => item.classification === 'public') &&
+      findings.some((f) => ['hidden_prompt', 'overlay', 'credential_form', 'link_mismatch'].includes(f.category));
+    const privateOnlyIp = ipIndicators.length && !ipIndicators.some((item) => item.classification === 'public');
+    const ipScore = publicIpCorrelated ? 0.15 : (privateOnlyIp ? 0.03 : 0);
+    const correlatedCategories = Object.keys(categoryScores).filter((category) => categoryScores[category] >= 0.12);
+    const correlationBonus = Math.min(0.18, Math.max(0, correlatedCategories.length - 1) * 0.06);
+    const baseScore = Math.max(0, ...Object.values(categoryScores));
+    const score = Math.max(0, Math.min(1, baseScore + correlationBonus + ipScore));
     const level = score >= 0.60 ? 'high' : (score >= 0.25 ? 'medium' : 'low');
     const order = { info: 0, low: 1, medium: 2, high: 3 };
     const highestSeverity = findings.reduce((best, f) => order[f.severity] > order[best] ? f.severity : best, 'info');
-    return { level, score: Number(score.toFixed(2)), highestSeverity, summary: `${findings.length} local DOM risk signal(s) found` };
+    return {
+      level,
+      score: Number(score.toFixed(2)),
+      highestSeverity,
+      summary: `${findings.length} local DOM risk signal(s) found`,
+      scoringModel: 'category_capped_correlation_v1',
+      categoryCaps,
+      categoryScores,
+      ipScore,
+      correlationBonus
+    };
   }
 
-  function runThreatScan() {
+  function runThreatScan(contextMode = 'minimal') {
     const startedAt = performance.now();
     const budget = THREAT_SCAN_BUDGET;
     let aborted = false;
@@ -1353,7 +1383,14 @@
       aborted,
       budget,
       recommendedAction: risk.level === 'high' ? 'threat_lock' : (risk.level === 'medium' ? 'review' : 'continue'),
-      privacy: { localOnly: true, rawTextStored: false, redactedByDefault: true, apiReviewRequiresHumanApproval: true },
+      privacy: {
+        mode: ['minimal', 'bounded', 'review'].includes(contextMode) ? contextMode : 'minimal',
+        localOnly: true,
+        rawTextStored: false,
+        redactedByDefault: true,
+        apiReviewRequiresHumanApproval: true,
+        noPageCaptureInMinimalMode: contextMode === 'minimal'
+      },
       limitations
     };
   }
@@ -1589,10 +1626,10 @@
     document.documentElement.appendChild(root);
   }
 
-  function startThreatScanOverlay() {
+  function startThreatScanOverlay(contextMode = 'minimal') {
     const gate = startPageTool('threatScan');
     if (!gate.ok) throw new Error(gate.error);
-    const report = runThreatScan();
+    const report = runThreatScan(contextMode);
     if (report.risk.level === 'medium' || report.risk.level === 'high') renderThreatFoundHud(report);
     finishPageTool('threatScan', report.aborted ? 'scan_budget_exceeded' : 'completed');
     return report;
@@ -1657,7 +1694,7 @@
         }
 
         if (msg?.type === 'BROWSERPILOT_START_THREAT_SCAN') {
-          const report = startThreatScanOverlay();
+          const report = startThreatScanOverlay(msg.contextMode || 'minimal');
           sendResponse({ ok: true, report });
           return;
         }

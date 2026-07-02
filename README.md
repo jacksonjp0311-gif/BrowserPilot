@@ -62,9 +62,9 @@ Current stability rules:
 
 ## Jarvis Permission Matrix
 
-BrowserPilot v0.3.9 keeps the Jarvis permission matrix while returning the default Edge and Chrome builds to stable runtime permissions. Most surfaces are optional capabilities, not silent behavior. Chrome requires `debugger` and declarative net request permissions to be manifest declarations rather than runtime optional requests, and Edge rejects `unlimitedStorage` as an optional permission, so BrowserPilot now marks those as lab-manifest-only instead of requiring or requesting them in the normal user build.
+BrowserPilot v0.3.11 keeps the Jarvis permission matrix while returning the default Edge and Chrome builds to stable runtime permissions. Most surfaces are optional capabilities, not silent behavior. Chrome requires `debugger` and declarative net request permissions to be manifest declarations rather than runtime optional requests, and Edge rejects `unlimitedStorage` as an optional permission, so BrowserPilot marks those as lab/future-only instead of requiring or requesting them in the normal user build.
 
-Added advanced optional surfaces include recent workflow recovery (`history`, `sessions`, `topSites`), evidence trails (`bookmarks`, `tabGroups`), local threat-lock/network surfaces (`webRequest`; DNR remains lab-manifest-only), privacy/browser diagnostics (`browsingData`, `privacy`, `contentSettings`, `management`), capture surfaces (`desktopCapture`, `pageCapture`, `tabCapture`, `offscreen`), and explicitly high-risk lab/bridge surfaces (`cookies`, `nativeMessaging`, `identity`; debugger and unlimited local vault storage remain lab-manifest-only).
+The permission matrix is split into declared optional permissions, advanced declared optional permissions, and lab/future unsupported permissions. The bulk enable button only requests declared non-advanced permissions; advanced permissions stay visible for future task-specific prompts.
 
 High-risk permissions must remain tied to explicit user actions and redacted operator logs. They do not permit silent cookie extraction, silent scraping, debugger attachment, native bridge calls, autonomous reporting, suspicious URL fetching, or IP attribution.
 
@@ -132,8 +132,15 @@ Threat Scan is a local-first DOM threat scan for the active tab. It replaces the
 
 Current capability:
 - Local DOM-first scan with no API call by default
+- Minimal privacy mode by default: scan only, no page-context capture
+- Bounded mode exists for scan plus capped local page context
+- Review mode is reserved for redacted context after trusted side-panel approval
+- Category-capped correlation scoring prevents repeated low-risk findings from becoming high risk by volume alone
 - Red centered Threat HUD only when medium/high local risk signals are found
 - Detects hidden prompt-like text, suspicious overlays, link mismatch, suspicious iframes, credential forms, inline handlers, and embedded IP indicators
+- Page HUD is a warning surface; side panel is the trusted consent surface
+- High-risk acknowledge records that the warning was seen but does not unlock risky commands
+- Medium-risk risky commands require side-panel confirmation
 - Scanner does not execute untrusted page JavaScript
 - Scanner does not fetch suspicious URLs
 - Scanner does not prove malware
@@ -165,15 +172,17 @@ Security model:
 
 The small bottom Extract IP Address button parses IPv4/IPv6 indicators from composer text, Cyber Snapshot text, page context, the latest Threat Scan report, and the latest Context Radar target.
 
-It supports multiple IPs, deduplicates indicators, and classifies public/private/reserved/documentation/loopback/link-local/multicast addresses. This is local-only parsing. It does not ping, scan, enrich, attack, report, or attribute.
+It supports multiple IPs, deduplicates indicators, applies stricter IPv6 filtering, shows per-source counts, and classifies public/private/reserved/documentation/loopback/link-local/multicast addresses. This is local-only parsing. It does not ping, scan, enrich, attack, report, or attribute.
+
+Reports explicitly separate extracted IPs, observed request IPs, and resolved IPs. BrowserPilot currently produces extracted IPs by default; observed and resolved IPs stay empty unless a future explicit Network IOC mode is enabled.
 
 IP addresses are network indicators only. They are not proof of attacker identity and may belong to CDNs, cloud providers, shared hosts, proxies, VPNs, or compromised infrastructure.
 
 ## Network IOC Capture / Authority Report Package
 
-Network IOC Capture is optional and gated. BrowserPilot v0.3.7 generates local IOC/evidence packages only after a user-reviewed suspicious or likely threat flow.
+Network IOC Capture is optional and gated. BrowserPilot generates local IOC/evidence packages only after a user-reviewed suspicious or likely threat flow.
 
-Threat Screens in v0.3.7 add an optional evidence HUD next to the red Threat Radar decision HUD. Each screen shows the local finding category, risk/severity, redacted preview, element hints, nearest heading, visibility state, source rectangle, CSS path, local IP indicators when present, and a focus action for the source rectangle. The Threat Timeline adds scan chronology and severity filters so high/medium/low findings can be reviewed without losing the full local evidence context.
+Threat Screens add an optional evidence HUD next to the red Threat Radar decision HUD. Each screen shows the local finding category, risk/severity, redacted preview, element hints, nearest heading, visibility state, source rectangle, CSS path, local IP indicators when present, and a focus action for the source rectangle. The Threat Timeline adds scan chronology and severity filters so high/medium/low findings can be reviewed without losing the full local evidence context.
 
 Report to Chat is an explicit human-clicked escalation path. It sends a compact local evidence bundle to the selected AGNT chat, combines Threat Scan with available Cyber Snapshot and Context Radar state, captures viewport metadata without sending the image payload, and asks for a short classification: benign, suspicious, likely threat, or inconclusive. It does not prove compromise, fetch suspicious URLs, execute page code, or attribute an IP owner.
 
@@ -182,6 +191,19 @@ The Authority Report Package can include domains, URLs, extracted IP indicators,
 BrowserPilot does not auto-submit reports, publicly post IP addresses, accuse an IP owner of being an attacker, attack, scan, retaliate, or dox.
 
 Allowed actions are local/export-oriented: create authority report, export IOC bundle, copy an abuse report template, or manually open an official reporting page after the user clicks.
+
+## Threat Radar QA Pages
+
+Deterministic local QA pages live in `test-pages/`:
+
+- `threat-radar-hidden-prompt.html`
+- `threat-radar-overlay.html`
+- `threat-radar-link-mismatch.html`
+- `threat-radar-iframe-form.html`
+- `threat-radar-ip-extraction.html`
+- `threat-radar-benign-control.html`
+
+Each page includes an `expected:` comment for the intended finding profile. `npm run validate` checks that these pages exist.
 
 ---
 

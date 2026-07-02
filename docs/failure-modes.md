@@ -176,6 +176,26 @@ Mitigation:
 - Keep IP indicators framed as infrastructure signals, not attribution.
 - Keep Report to Chat compact, evidence-bound, and explicit that the verdict may be benign, suspicious, likely threat, or inconclusive.
 
+### Consent Surface Drift
+
+Symptoms:
+
+- A page-injected HUD button unlocks risky agent commands.
+- A high-risk acknowledge clears Threat Lock.
+- Medium-risk findings allow click/type/navigate commands without a side-panel decision.
+
+Likely causes:
+
+- Page HUD warning controls are treated as trusted consent.
+- Acknowledge is confused with permission to act.
+
+Mitigation:
+
+- Page HUD is a warning surface only.
+- Side panel is the trusted consent surface.
+- High-risk acknowledge records that the warning was seen and keeps Threat Lock active.
+- Medium-risk risky commands require side-panel confirmation.
+
 ### IP Attribution Drift
 
 Symptoms:

@@ -12,6 +12,7 @@ const els = {
   errorBox: document.getElementById('errorBox'),
   contextHint: document.getElementById('contextHint'),
   threatScanBtn: document.getElementById('threatScanBtn') || document.getElementById('captureBtn'),
+  threatScanContextMode: document.getElementById('threatScanContextMode'),
   cyberSnapshotBtn: document.getElementById('cyberSnapshotBtn'),
   watchRegionBtn: document.getElementById('watchRegionBtn'),
   contextRadarBtn: document.getElementById('contextRadarBtn'),
@@ -55,9 +56,30 @@ let lastThreatReview = null;
 let lastAuthorityReport = null;
 let lastExtractedIps = null;
 let _activityTimer = null;
+let threatScanContextMode = 'minimal';
 
 function isLocalDefaultAgentId(agentId = selectedAgentId) {
   return String(agentId || '') === LOCAL_DEFAULT_AGENT_ID;
+}
+
+function trustedSidePanelConfirm(action, detail = '') {
+  const message = [
+    `BrowserPilot trusted side-panel confirmation: ${action}`,
+    detail,
+    '',
+    'Page HUD buttons are warning surfaces only. The side panel is the consent surface.'
+  ].filter(Boolean).join('\n');
+  return window.confirm(message);
+}
+
+function threatRiskLevel(report = lastThreatScan) {
+  return String(report?.risk?.level || 'low').toLowerCase();
+}
+
+function isLikelyThreat(report = lastThreatScan) {
+  const lifecycle = String(report?.lifecycle?.status || '').toLowerCase();
+  const recommended = String(report?.recommendedAction || '').toLowerCase();
+  return threatRiskLevel(report) === 'high' || lifecycle === 'likely_threat' || recommended === 'threat_lock';
 }
 
 function makeLocalDefaultAgent(reason = '') {
@@ -622,17 +644,37 @@ async function maybeExecuteJarvisFromText(text) {
   const commands = Array.isArray(parsed) ? parsed : (parsed?.commands || parsed?.agntExec || null);
   if (!Array.isArray(commands) || !commands.length) return;
 
-  const blockedByThreat = threatLockActive || (lastThreatScan?.risk?.level === 'high' && !['acknowledged', 'reviewed', 'dismissed'].includes(lastThreatScan?.lifecycle?.status));
-  if (blockedByThreat && commands.some(isRiskyBrowserCommand)) {
+  const hasRiskyCommand = commands.some(isRiskyBrowserCommand);
+  const level = threatRiskLevel(lastThreatScan);
+  const blockedByThreat = threatLockActive || isLikelyThreat(lastThreatScan);
+  if (hasRiskyCommand && blockedByThreat) {
     pushMsg('assistant', [
       '[threat lock] blocked risky browser command.',
-      'Reason: active threat report requires review before agent action.'
+      'Reason: active high-risk or likely-threat report requires sandbox review before agent action.',
+      'Side-panel consent cannot disable Threat Lock for high-risk findings.'
     ].join('\n'));
     await telemetry('threat_lock_blocked_command', {
       commandKinds: commands.map((cmd) => String(cmd?.kind || 'unknown')).slice(0, 25),
-      reportId: lastThreatScan?.reportId || null
+      reportId: lastThreatScan?.reportId || null,
+      riskLevel: level,
+      trustedConsent: 'denied_high_risk'
     });
     return;
+  }
+  if (hasRiskyCommand && level === 'medium') {
+    const allowed = trustedSidePanelConfirm(
+      'Allow one blocked command batch',
+      `Medium-risk threat scan is active. Allow ${commands.length} proposed command(s) once?`
+    );
+    await telemetry('threat_lock_medium_confirmation', {
+      allowed,
+      commandKinds: commands.map((cmd) => String(cmd?.kind || 'unknown')).slice(0, 25),
+      reportId: lastThreatScan?.reportId || null
+    });
+    if (!allowed) {
+      pushMsg('assistant', '[threat lock] medium-risk command batch cancelled by side-panel confirmation.');
+      return;
+    }
   }
   await telemetry('command_batch_detected', {
     commandCount: commands.length,
@@ -847,6 +889,20 @@ function ipVersion(ip) {
   return normalizeIpAddress(ip).includes(':') ? 'ipv6' : 'ipv4';
 }
 
+function isValidIpv6Candidate(value) {
+  const normalized = normalizeIpAddress(value);
+  if (!normalized.includes(':')) return false;
+  if ((normalized.match(/::/g) || []).length > 1) return false;
+  if (/[^0-9a-f:.]/i.test(normalized)) return false;
+  if (normalized.includes(':::')) return false;
+  const hasCompression = normalized.includes('::');
+  const groups = normalized.split(':').filter(Boolean);
+  if (!hasCompression && groups.length !== 8 && groups.length < 3) return false;
+  if (groups.length > 8) return false;
+  if (groups.some((part) => part.length > 4 || !/^[0-9a-f]{1,4}$/i.test(part))) return false;
+  return true;
+}
+
 function extractIpIndicatorsFromText(text, sourceField = 'text') {
   const raw = String(text || '');
   const indicators = [];
@@ -859,6 +915,8 @@ function extractIpIndicatorsFromText(text, sourceField = 'text') {
       if (version === 'ipv4') {
         const parts = candidate.split('.').map(Number);
         if (parts.length !== 4 || parts.some((part) => Number.isNaN(part) || part < 0 || part > 255)) continue;
+      } else if (!isValidIpv6Candidate(candidate)) {
+        continue;
       }
       const idx = match.index || 0;
       indicators.push({
@@ -866,6 +924,7 @@ function extractIpIndicatorsFromText(text, sourceField = 'text') {
         version,
         classification: classifyIpAddress(candidate),
         sourceField,
+        indicatorType: 'extracted',
         surroundingPreview: raw.slice(Math.max(0, idx - 80), Math.min(raw.length, idx + String(match[0]).length + 80)).replace(/\s+/g, ' ').trim(),
         normalized: candidate,
         duplicate: false
@@ -903,6 +962,10 @@ function buildIpExtractionResult(sources, source = 'combined') {
   }
   const indicators = dedupeIpIndicators(all);
   const privateClasses = new Set(['private', 'loopback', 'link_local', 'multicast', 'reserved', 'documentation']);
+  const sourceCounts = {};
+  for (const item of indicators) {
+    sourceCounts[item.sourceField || 'unknown'] = (sourceCounts[item.sourceField || 'unknown'] || 0) + 1;
+  }
   return {
     schemaVersion: 'browserpilot.ipExtraction.v1',
     extractionId: `ip-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
@@ -914,12 +977,19 @@ function buildIpExtractionResult(sources, source = 'combined') {
       ipv4: indicators.filter((item) => item.version === 'ipv4').length,
       ipv6: indicators.filter((item) => item.version === 'ipv6').length,
       public: indicators.filter((item) => item.classification === 'public').length,
-      privateOrReserved: indicators.filter((item) => privateClasses.has(item.classification)).length
+      privateOrReserved: indicators.filter((item) => privateClasses.has(item.classification)).length,
+      bySource: sourceCounts
     },
+    extractedIps: indicators,
+    observedIps: [],
+    resolvedIps: [],
     indicators,
-    privacy: { localOnly: true, apiReviewRequiresHumanApproval: true },
+    privacy: { localOnly: true, noNetwork: true, apiReviewRequiresHumanApproval: true },
     limitations: [
-      'Extracted IP addresses are indicators only',
+      'Extracted IPs are parsed from local text only',
+      'Observed IPs require explicit future Network IOC mode and are empty here',
+      'Resolved IPs require explicit DNS enrichment and are empty here',
+      'No network lookup, scan, ping, DNS resolution, or report was made',
       'An IP address is not proof of attacker identity',
       'IPs may belong to CDNs, cloud providers, proxies, shared hosting, VPNs, or compromised infrastructure'
     ]
@@ -957,10 +1027,13 @@ function renderIpExtraction(result) {
   const lines = result.indicators.slice(0, 20).map((item) => `- ${item.value} | ${item.classification} | ${item.sourceField} | ${item.surroundingPreview || ''}`);
   pushMsg('assistant', [
     `[ip extractor] found ${result.counts.total} IP indicator(s)`,
+    'Mode: extracted IPs only | no network lookup',
     `Public: ${result.counts.public}`,
     `Private/reserved: ${result.counts.privateOrReserved}`,
+    `By source: ${JSON.stringify(result.counts.bySource || {})}`,
     ...lines,
     result.indicators.length > 20 ? `...${result.indicators.length - 20} more` : '',
+    'Extracted IPs are not observed request IPs or resolved DNS results.',
     'Network indicators are not proof of attacker identity.'
   ].filter(Boolean).join('\n'));
   insertIntoComposer([
@@ -989,9 +1062,16 @@ function threatLifecycle(report, status = 'local_detected', userDecision = null)
 
 async function startThreatScan() {
   setError(null);
-  await telemetry('threat_scan_started', pageContextStats());
-  try { await captureActiveTab(); } catch {}
-  const res = await bg({ type: 'BROWSERPILOT_START_THREAT_SCAN', tabId: targetTabId });
+  const contextMode = threatScanContextMode || 'minimal';
+  await telemetry('threat_scan_started', { ...pageContextStats(), threatScanContextMode: contextMode });
+  if (contextMode === 'bounded') {
+    try { await captureActiveTab(); } catch {}
+  } else if (contextMode === 'review') {
+    const approved = trustedSidePanelConfirm('Threat Scan review mode', 'Review mode may use redacted local context after approval. Continue?');
+    if (!approved) return;
+    try { await captureActiveTab(); } catch {}
+  }
+  const res = await bg({ type: 'BROWSERPILOT_START_THREAT_SCAN', tabId: targetTabId, contextMode });
   if (!res?.ok) throw new Error(res?.error || 'Threat Scan failed');
   if (typeof res.tabId === 'number') targetTabId = res.tabId;
   const report = res.report || {};
@@ -1024,7 +1104,7 @@ async function startThreatScan() {
       'No medium/high local risk signals found.'
     ].filter(Boolean).join('\n'));
   }
-  await telemetry('threat_scan_completed', { risk: report?.risk || null, counts: report?.counts || null, durationMs: report?.durationMs || null, nodesScanned: report?.nodesScanned || null, aborted: Boolean(report?.aborted), budget: report?.budget || null });
+  await telemetry('threat_scan_completed', { risk: report?.risk || null, counts: report?.counts || null, durationMs: report?.durationMs || null, nodesScanned: report?.nodesScanned || null, aborted: Boolean(report?.aborted), budget: report?.budget || null, threatScanContextMode: contextMode });
 }
 
 function insertThreatScanReport() {
@@ -1550,17 +1630,25 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 
   if (msg?.type === 'BROWSERPILOT_THREAT_HUD_ACKNOWLEDGED') {
-    if (lastThreatScan) lastThreatScan.lifecycle = { ...(lastThreatScan.lifecycle || threatLifecycle(lastThreatScan)), status: 'acknowledged', userDecision: 'acknowledged', lastUpdatedAt: new Date().toISOString() };
-    threatLockActive = false;
+    const report = msg.report || lastThreatScan;
+    const level = threatRiskLevel(report);
+    if (level === 'high' && !trustedSidePanelConfirm('Acknowledge high-risk warning', 'This records that you saw the warning. It will not unlock risky agent commands.')) return;
+    if (lastThreatScan) lastThreatScan.lifecycle = { ...(lastThreatScan.lifecycle || threatLifecycle(lastThreatScan)), status: level === 'high' ? 'acknowledged_locked' : 'acknowledged', userDecision: 'acknowledged', lastUpdatedAt: new Date().toISOString() };
+    threatLockActive = level === 'high' || isLikelyThreat(report) ? true : false;
     queueSaveState();
-    pushMsg('assistant', '[threat scan] acknowledged locally. No API call was made.');
+    pushMsg('assistant', level === 'high'
+      ? '[threat scan] high-risk warning acknowledged. Threat Lock remains active; risky agent commands stay blocked.'
+      : '[threat scan] acknowledged locally. Medium-risk risky actions still require side-panel confirmation.');
   }
 
   if (msg?.type === 'BROWSERPILOT_THREAT_HUD_DISMISSED') {
-    if (lastThreatScan) lastThreatScan.lifecycle = { ...(lastThreatScan.lifecycle || threatLifecycle(lastThreatScan)), status: 'dismissed', userDecision: 'dismissed', lastUpdatedAt: new Date().toISOString() };
-    threatLockActive = false;
+    const report = msg.report || lastThreatScan;
+    const level = threatRiskLevel(report);
+    if ((level === 'high' || threatLockActive) && !trustedSidePanelConfirm('Disable Threat Lock / dismiss warning', 'High-risk or locked state is active. Dismiss will hide the warning, but high-risk Threat Lock remains active.')) return;
+    if (lastThreatScan) lastThreatScan.lifecycle = { ...(lastThreatScan.lifecycle || threatLifecycle(lastThreatScan)), status: level === 'high' ? 'dismissed_locked' : 'dismissed', userDecision: 'dismissed', lastUpdatedAt: new Date().toISOString() };
+    threatLockActive = level === 'high' || isLikelyThreat(report) ? true : false;
     queueSaveState();
-    pushMsg('assistant', '[threat scan] dismissed for this local session.');
+    pushMsg('assistant', threatLockActive ? '[threat scan] dismissed visually. Threat Lock remains active.' : '[threat scan] dismissed for this local session.');
   }
 
   if (msg?.type === 'BROWSERPILOT_THREAT_HUD_BLOCK_ACTIONS') {
@@ -1571,10 +1659,12 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 
   if (msg?.type === 'BROWSERPILOT_THREAT_HUD_SEND_TO_SANDBOX') {
+    if (!trustedSidePanelConfirm('Send to Chat Sandbox', 'A redacted local threat report will be inserted into the composer. No suspicious URLs are fetched by this action.')) return;
     insertThreatReviewPrompt(msg.report || lastThreatScan);
   }
 
   if (msg?.type === 'BROWSERPILOT_THREAT_REPORT_TO_CHAT') {
+    if (!trustedSidePanelConfirm('Report threat evidence to chat', 'BrowserPilot will send a compact redacted local evidence bundle to the side-panel chat.')) return;
     reportThreatToChat(msg.report || lastThreatScan).catch(e => { setPanelActivity(false); setError(e.message); });
   }
 
@@ -1584,7 +1674,10 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 
   if (msg?.type === 'BROWSERPILOT_THREAT_CREATE_AUTHORITY_REPORT') {
-    try { createAuthorityReport(); } catch (e) { setError(e.message); }
+    try {
+      if (!trustedSidePanelConfirm('Create Authority Report', 'Create a local, redacted report package. BrowserPilot will not auto-submit it.')) return;
+      createAuthorityReport();
+    } catch (e) { setError(e.message); }
   }
 
   // Echo/stream from AGNT agent chat (SSE) back into the sidebar placeholder.
@@ -1615,6 +1708,10 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 els.refreshBtn.addEventListener('click', () => ensureAndLoadAgents().catch(e => setError(e.message)));
 if (els.threatScanBtn) els.threatScanBtn.addEventListener('click', () => startThreatScan().catch(e => setError(e.message)));
+if (els.threatScanContextMode) els.threatScanContextMode.addEventListener('change', () => {
+  threatScanContextMode = ['minimal', 'bounded', 'review'].includes(els.threatScanContextMode.value) ? els.threatScanContextMode.value : 'minimal';
+  pushMsg('assistant', `[threat scan] privacy mode set to ${threatScanContextMode}.`);
+});
 if (els.cyberSnapshotBtn) els.cyberSnapshotBtn.addEventListener('click', () => startCyberSnapshot().catch(e => setError(e.message)));
 if (els.watchRegionBtn) els.watchRegionBtn.addEventListener('click', () => toggleRegionWatch().catch(e => setError(e.message)));
 if (els.contextRadarBtn) els.contextRadarBtn.addEventListener('click', () => startContextRadar().catch(e => setError(e.message)));

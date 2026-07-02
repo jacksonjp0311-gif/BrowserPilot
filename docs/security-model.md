@@ -45,6 +45,13 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 - Threat Scan is user-initiated and local-first.
 - It performs a DOM-first static scan only.
 - It has node/link/frame/form/script/comment/time budgets and can return partial reports with `scan_budget_exceeded`.
+- Minimal mode is the default and does not capture broader page context before scanning.
+- Bounded mode may include capped local page context.
+- Review mode requires trusted side-panel approval before redacted context is sent for review.
+- Category-capped correlation scoring prevents repeated low-risk findings from becoming high risk by volume alone.
+- Page HUD is a warning surface; side panel is the trusted consent surface.
+- High-risk acknowledge does not unlock risky agent commands.
+- Medium-risk risky commands require side-panel confirmation.
 - It does not execute untrusted page JavaScript.
 - It does not fetch suspicious URLs.
 - It does not auto-send raw page data to AGNT.
@@ -59,7 +66,8 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 ## Extract IP Address
 
 - IP extraction is local parsing only.
-- It supports IPv4, IPv6, multiple indicators, deduplication, and basic public/private/reserved classification.
+- It supports IPv4, IPv6, stricter IPv6 filtering, multiple indicators, deduplication, per-source counts, and basic public/private/reserved classification.
+- It separates extracted IPs, observed request IPs, and resolved IPs. Default BrowserPilot output is extracted-only.
 - It does not ping, port scan, DNS enrich, attack, report, or attribute.
 - IP addresses are infrastructure indicators, not proof of attacker identity.
 
@@ -90,7 +98,7 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 - Operator bridge: `notifications`, `alarms`, `clipboardRead`, `clipboardWrite`, `idle`.
 - High-risk lab/bridge: `cookies`, `debugger`, `nativeMessaging`, `identity`.
 
-Chrome does not allow `debugger` or declarative net request permissions to be requested as ordinary optional permissions, and Edge rejects `unlimitedStorage` as optional. BrowserPilot therefore keeps them out of the default Edge/Chrome manifests and labels them lab-manifest-only in Options. A future lab build may declare them, but their use must still require explicit operator action. High-risk permissions must stay behind explicit user actions and redacted logs. BrowserPilot must not silently extract cookie values, scrape history, attach the debugger, fetch suspicious URLs, bypass policy, or report anything without user action.
+Chrome does not allow `debugger` or declarative net request permissions to be requested as ordinary optional permissions, and Edge rejects `unlimitedStorage` as optional. BrowserPilot therefore keeps them out of the default Edge/Chrome manifests and labels them lab/future-only in Options. Declared optional permissions are split from advanced declared optional permissions, and the bulk enable button requests only declared non-advanced permissions. A future lab build may declare lab-only permissions, but their use must still require explicit operator action. High-risk permissions must stay behind explicit user actions and redacted logs. BrowserPilot must not silently extract cookie values, scrape history, attach the debugger, fetch suspicious URLs, bypass policy, or report anything without user action.
 
 ## Modes (and what they mean)
 

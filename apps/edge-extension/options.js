@@ -22,26 +22,26 @@ const JARVIS_OPTIONAL_PERMISSIONS = [
   { perm: 'clipboardWrite', group: 'clipboard', risk: 'medium', purpose: 'copy reports, commands, or evidence snippets after user action' },
   { perm: 'downloads', group: 'files', risk: 'medium', purpose: 'export local reports, snapshots, and evidence bundles' },
   { perm: 'pageCapture', group: 'files', risk: 'medium', purpose: 'save approved page snapshots as local artifacts' },
-  { perm: 'history', group: 'workflow memory', risk: 'high', purpose: 'explicit recent-page recovery only' },
-  { perm: 'topSites', group: 'workflow memory', risk: 'high', purpose: 'optional browser workflow recall surface' },
-  { perm: 'sessions', group: 'workflow memory', risk: 'high', purpose: 'recover recently closed tabs/windows after user request' },
+  { perm: 'history', group: 'workflow memory', risk: 'high', purpose: 'explicit recent-page recovery only', advanced: true },
+  { perm: 'topSites', group: 'workflow memory', risk: 'high', purpose: 'optional browser workflow recall surface', advanced: true },
+  { perm: 'sessions', group: 'workflow memory', risk: 'high', purpose: 'recover recently closed tabs/windows after user request', advanced: true },
   { perm: 'bookmarks', group: 'research trails', risk: 'medium', purpose: 'save or retrieve user-approved evidence trails' },
   { perm: 'tabGroups', group: 'research trails', risk: 'medium', purpose: 'organize investigation tabs into named groups' },
   { perm: 'declarativeNetRequest', group: 'threat lock', risk: 'high', purpose: 'future reversible local block rules', labOnly: true },
   { perm: 'declarativeNetRequestWithHostAccess', group: 'threat lock', risk: 'high', purpose: 'future host-aware local block rules', labOnly: true },
-  { perm: 'webRequest', group: 'network evidence', risk: 'high', purpose: 'metadata-only request observation; no content capture' },
-  { perm: 'cookies', group: 'sensitive diagnostics', risk: 'very high', purpose: 'redacted login-state diagnostics only; no cookie value extraction' },
+  { perm: 'webRequest', group: 'network evidence', risk: 'high', purpose: 'metadata-only request observation; no content capture', advanced: true },
+  { perm: 'cookies', group: 'sensitive diagnostics', risk: 'very high', purpose: 'redacted login-state diagnostics only; no cookie value extraction', advanced: true },
   { perm: 'debugger', group: 'browser lab', risk: 'very high', purpose: 'deep inspection only after explicit advanced approval', labOnly: true },
-  { perm: 'nativeMessaging', group: 'local bridge', risk: 'very high', purpose: 'future companion-app/sandbox bridge; separate setup required' },
-  { perm: 'identity', group: 'account bridge', risk: 'high', purpose: 'future account/login bridge; not needed for local mode' },
-  { perm: 'management', group: 'environment diagnostics', risk: 'high', purpose: 'inspect extension environment for support/debug flows' },
-  { perm: 'browsingData', group: 'privacy tools', risk: 'high', purpose: 'future explicit cleanup flow for local browser data' },
-  { perm: 'contentSettings', group: 'privacy tools', risk: 'high', purpose: 'future explicit site-setting diagnostics and repair prompts' },
-  { perm: 'privacy', group: 'privacy tools', risk: 'high', purpose: 'future read-only privacy-setting diagnostics' },
+  { perm: 'nativeMessaging', group: 'local bridge', risk: 'very high', purpose: 'future companion-app/sandbox bridge; separate setup required', advanced: true },
+  { perm: 'identity', group: 'account bridge', risk: 'high', purpose: 'future account/login bridge; not needed for local mode', advanced: true },
+  { perm: 'management', group: 'environment diagnostics', risk: 'high', purpose: 'inspect extension environment for support/debug flows', advanced: true },
+  { perm: 'browsingData', group: 'privacy tools', risk: 'high', purpose: 'future explicit cleanup flow for local browser data', advanced: true },
+  { perm: 'contentSettings', group: 'privacy tools', risk: 'high', purpose: 'future explicit site-setting diagnostics and repair prompts', advanced: true },
+  { perm: 'privacy', group: 'privacy tools', risk: 'high', purpose: 'future read-only privacy-setting diagnostics', advanced: true },
   { perm: 'idle', group: 'operator state', risk: 'medium', purpose: 'detect operator idle state before long-running local flows' },
   { perm: 'unlimitedStorage', group: 'local vault', risk: 'medium', purpose: 'larger local report vaults and evidence archives', labOnly: true },
-  { perm: 'desktopCapture', group: 'capture', risk: 'high', purpose: 'explicit screen capture prompt only' },
-  { perm: 'tabCapture', group: 'capture', risk: 'high', purpose: 'explicit tab capture prompt only' },
+  { perm: 'desktopCapture', group: 'capture', risk: 'high', purpose: 'explicit screen capture prompt only', advanced: true },
+  { perm: 'tabCapture', group: 'capture', risk: 'high', purpose: 'explicit tab capture prompt only', advanced: true },
   { perm: 'offscreen', group: 'capture', risk: 'medium', purpose: 'offscreen document support for bounded capture/audio tasks' }
 ];
 
@@ -90,7 +90,7 @@ async function refreshPermissionsStatus() {
     }
     const ok = item.labOnly ? false : byPerm.get(item.perm);
     const check = checks.find((entry) => entry.perm === item.perm);
-    const mode = item.labOnly ? 'lab manifest only' : 'optional request';
+    const mode = item.labOnly ? 'lab/future unsupported' : (item.advanced ? 'advanced declared optional' : 'declared optional');
     lines.push(`- ${ok ? '[x]' : '[ ]'} ${item.perm} | ${mode} | ${item.risk} | ${item.purpose}${check?.error ? ` | ${check.error}` : ''}`);
   }
   lines.push('');
@@ -104,7 +104,7 @@ async function requestJarvisPermissions() {
   setPermBox('Requesting…');
   permStatusEl.textContent = 'Requesting…';
 
-  const permissions = JARVIS_OPTIONAL_PERMISSIONS.filter((item) => !item.labOnly).map((item) => item.perm);
+  const permissions = JARVIS_OPTIONAL_PERMISSIONS.filter((item) => !item.labOnly && !item.advanced).map((item) => item.perm);
 
   const ok = await new Promise((resolve) => {
     chrome.permissions.request({ permissions, origins: ['<all_urls>'] }, (granted) => {

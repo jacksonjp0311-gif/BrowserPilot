@@ -95,6 +95,18 @@ for (const [label, extensionDir] of targets) {
   if ((label === 'edge' || label === 'chrome') && (!contentText.includes('THREAT_SCAN_BUDGET') || !contentText.includes('nodesScanned') || !contentText.includes('scan_budget_exceeded'))) {
     throw new Error(`[${label}] contentScript.js must expose Threat Scan budgets and partial-result metadata`);
   }
+  if ((label === 'edge' || label === 'chrome') && (!contentText.includes('category_capped_correlation_v1') || !contentText.includes('categoryCaps') || !contentText.includes('correlationBonus'))) {
+    throw new Error(`[${label}] contentScript.js must use category-capped correlation threat scoring`);
+  }
+  if ((label === 'edge' || label === 'chrome') && (!contentText.includes('contextMode') || !contentText.includes('noPageCaptureInMinimalMode') || !sidepanelText.includes('threatScanContextMode') || !sidepanelHtml.includes('id="threatScanContextMode"'))) {
+    throw new Error(`[${label}] Threat Scan must expose privacy context modes`);
+  }
+  if ((label === 'edge' || label === 'chrome') && (!sidepanelText.includes('trustedSidePanelConfirm') || sidepanelText.includes('threatLockActive = false;\n    queueSaveState();\n    pushMsg'))) {
+    throw new Error(`[${label}] sidepanel.js must preserve trusted confirmation and avoid blind Threat Lock unlock`);
+  }
+  if ((label === 'edge' || label === 'chrome') && (!sidepanelText.includes('observedIps: []') || !sidepanelText.includes('resolvedIps: []') || !sidepanelText.includes('noNetwork: true') || !sidepanelText.includes('isValidIpv6Candidate'))) {
+    throw new Error(`[${label}] Extract IP must separate extracted/observed/resolved IPs and guarantee no-network local parsing`);
+  }
   if ((label === 'edge' || label === 'chrome') && (!contentText.includes('CONTEXT_RADAR_BUDGET') || !contentText.includes('candidatesScanned'))) {
     throw new Error(`[${label}] contentScript.js must expose Context Radar budgets`);
   }
@@ -157,8 +169,26 @@ for (const [label, extensionDir] of targets) {
     throw new Error(`[${label}] default manifest must not require lab-only permissions: ${presentLabOnlyPermissions.join(', ')}`);
   }
   const optionsText = fs.readFileSync(path.join(extensionDir, 'options.js'), 'utf8');
-  if ((label === 'edge' || label === 'chrome') && (!sidepanelHtml || !optionsText.includes('JARVIS_OPTIONAL_PERMISSIONS') || !optionsText.includes('labOnly'))) {
+  if ((label === 'edge' || label === 'chrome') && (!sidepanelHtml || !optionsText.includes('JARVIS_OPTIONAL_PERMISSIONS') || !optionsText.includes('labOnly') || !optionsText.includes('advanced declared optional') || !optionsText.includes('declared optional'))) {
     throw new Error(`[${label}] options.js must expose Jarvis permission matrix`);
+  }
+
+  const qaPages = [
+    'threat-radar-hidden-prompt.html',
+    'threat-radar-overlay.html',
+    'threat-radar-link-mismatch.html',
+    'threat-radar-iframe-form.html',
+    'threat-radar-ip-extraction.html',
+    'threat-radar-benign-control.html'
+  ];
+  for (const page of qaPages) {
+    const qaPath = path.join(root, 'test-pages', page);
+    if (!fs.existsSync(qaPath)) {
+      throw new Error(`[${label}] Missing Threat Radar QA page: ${page}`);
+    }
+    if (!fs.readFileSync(qaPath, 'utf8').includes('expected:')) {
+      throw new Error(`[${label}] Threat Radar QA page lacks expected finding comment: ${page}`);
+    }
   }
 
   console.log(`BrowserPilot ${label} extension validated: ${manifest.name} ${manifest.version}`);

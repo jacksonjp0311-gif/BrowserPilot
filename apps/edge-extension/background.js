@@ -460,8 +460,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg?.type === 'BROWSERPILOT_START_THREAT_SCAN') {
         const tabId = await resolveLiveTabId(msg.tabId);
         if (typeof tabId !== 'number') throw new Error('No active tab');
-        await recordTelemetry('threat_scan_started', { tabId });
-        const res = await sendTabMessage(tabId, { type: 'BROWSERPILOT_START_THREAT_SCAN' });
+        const contextMode = ['minimal', 'bounded', 'review'].includes(msg.contextMode) ? msg.contextMode : 'minimal';
+        await recordTelemetry('threat_scan_started', { tabId, contextMode });
+        const res = await sendTabMessage(tabId, { type: 'BROWSERPILOT_START_THREAT_SCAN', contextMode });
         await recordTelemetry(res?.ok ? 'threat_scan_completed' : 'threat_scan_failed', {
           tabId,
           ok: Boolean(res?.ok),

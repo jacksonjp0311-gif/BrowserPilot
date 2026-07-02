@@ -568,6 +568,15 @@
         <button id="openAgntBtn" class="btnAccent" title="Side-panel mode keeps AGNT chat closed unless opened manually.">Open AGNT Chat</button>
       </div>
 
+      <div class="row">
+        <select id="threatScanContextMode" class="comboInput" title="Threat Scan privacy mode">
+          <option value="minimal" selected>Threat Scan: Minimal</option>
+          <option value="bounded">Threat Scan: Bounded</option>
+          <option value="review">Threat Scan: Review</option>
+        </select>
+        <div class="hint" style="text-align:right">Minimal scans only. Bounded captures capped page context. Review uses redacted context after approval.</div>
+      </div>
+
       <div class="hint" id="contextHint">Click the floating “AGNT” button on any page to capture URL + selection. Threat Scan runs a local DOM-first review with no API call by default. Toggle Control: OFF / Jarvis / Edge Copilot (SymTorch-gated).</div>
       <div id="errorBox" class="error" style="display:none"></div>
     </div>

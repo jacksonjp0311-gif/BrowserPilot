@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>BrowserPilot QA - transparent overlay</title>
+<!-- expected: risk high; category overlay >= 1; transparent interactive overlay detected -->
+<main>
+  <h1>Transparent Overlay QA</h1>
+  <p>A large transparent click target covers the page.</p>
+  <button>Visible benign button</button>
+  <button style="position:fixed;inset:0;z-index:2000;opacity:.04;cursor:pointer" onclick="console.log('overlay')">
+    Hidden overlay click target
+  </button>
+</main>

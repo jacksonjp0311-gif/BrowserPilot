@@ -43,8 +43,9 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 - It does not fetch suspicious URLs.
 - It does not auto-send raw page data to AGNT.
 - Medium/high findings show a centered red HUD.
-- Threat Screens can be opened from the red HUD to inspect per-finding evidence cards, risk/severity, redacted previews, element hints, and local IP indicators.
+- Threat Screens can be opened from the red HUD to inspect per-finding evidence cards, risk/severity, redacted previews, element hints, nearest headings, visibility state, source rectangles, CSS paths, hashes, and local IP indicators.
 - Threat Timeline and severity filters help navigate local findings without changing the underlying report or risk score.
+- Report to Chat is explicit user-approved escalation. It sends a compact local evidence bundle to the selected AGNT chat and may include available Cyber Snapshot, Context Radar, page context, and viewport capture metadata. It does not send the screenshot image payload by default.
 - Threat Lock can block risky agent commands while preserving safe observation commands.
 - Findings are risk signals, not proof of malware.
 - Threat Screens are evidence-navigation aids, not malware proof or IP attribution.
@@ -59,7 +60,7 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 ## Threat Review Sandbox
 
 - Threat Review requires explicit human approval.
-- BrowserPilot inserts a redacted review prompt into the composer; it does not auto-send by default.
+- BrowserPilot can either insert a redacted review prompt into the composer or, when the user clicks Report to Chat, auto-send a compact review request to the selected AGNT chat.
 - Container/disposable isolation is preferred.
 - Python VENV fallback is not a security boundary.
 - Static review must not fetch suspicious URLs or execute page code.

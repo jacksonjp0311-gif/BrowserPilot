@@ -100,6 +100,7 @@ Symptoms:
 
 - User sees `Threat Signal Detected` and assumes confirmed malware.
 - User sees Threat Screens and assumes a finding card proves attacker identity.
+- User clicks Report to Chat and assumes the chat classification is authoritative.
 
 Likely causes:
 
@@ -112,6 +113,7 @@ Mitigation:
 - Do not fetch suspicious URLs or execute page scripts.
 - Keep Threat Screens redacted and local-only.
 - Keep IP indicators framed as infrastructure signals, not attribution.
+- Keep Report to Chat compact, evidence-bound, and explicit that the verdict may be benign, suspicious, likely threat, or inconclusive.
 
 ### IP Attribution Drift
 

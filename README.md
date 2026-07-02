@@ -147,9 +147,11 @@ IP addresses are network indicators only. They are not proof of attacker identit
 
 ## Network IOC Capture / Authority Report Package
 
-Network IOC Capture is optional and gated. BrowserPilot v0.3.4 generates local IOC/evidence packages only after a user-reviewed suspicious or likely threat flow.
+Network IOC Capture is optional and gated. BrowserPilot v0.3.5 generates local IOC/evidence packages only after a user-reviewed suspicious or likely threat flow.
 
-Threat Screens in v0.3.4 add an optional evidence HUD next to the red Threat Radar decision HUD. Each screen shows the local finding category, risk/severity, redacted preview, element hints, local IP indicators when present, and a focus action for the source rectangle. The Threat Timeline adds scan chronology and severity filters so high/medium/low findings can be reviewed without losing the full local evidence context.
+Threat Screens in v0.3.5 add an optional evidence HUD next to the red Threat Radar decision HUD. Each screen shows the local finding category, risk/severity, redacted preview, element hints, nearest heading, visibility state, source rectangle, CSS path, local IP indicators when present, and a focus action for the source rectangle. The Threat Timeline adds scan chronology and severity filters so high/medium/low findings can be reviewed without losing the full local evidence context.
+
+Report to Chat is an explicit human-clicked escalation path. It sends a compact local evidence bundle to the selected AGNT chat, combines Threat Scan with available Cyber Snapshot and Context Radar state, captures viewport metadata without sending the image payload, and asks for a short classification: benign, suspicious, likely threat, or inconclusive. It does not prove compromise, fetch suspicious URLs, execute page code, or attribute an IP owner.
 
 The Authority Report Package can include domains, URLs, extracted IP indicators, observed request IPs only if a future optional permission is enabled, redirect chains and timestamps when available, and the sandbox wipe certificate.
 

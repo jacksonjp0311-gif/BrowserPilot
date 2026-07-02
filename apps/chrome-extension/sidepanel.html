@@ -87,13 +87,86 @@
       padding: 12px;
       display: grid;
       gap: 10px;
+      position: relative;
+      overflow: hidden;
     }
 
     .brand {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       justify-content: space-between;
       gap: 12px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .brandLockup {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .activityMark {
+      width: 22px;
+      height: 22px;
+      position: relative;
+      flex: 0 0 auto;
+      filter: drop-shadow(0 0 10px rgba(254,78,78,0.54));
+    }
+
+    .activityMark span {
+      position: absolute;
+      width: 5px;
+      height: 5px;
+      border-radius: 999px;
+      background: #ff3366;
+      box-shadow: 0 0 10px rgba(255,51,102,0.85), 0 0 18px rgba(209,61,229,0.42);
+    }
+
+    .activityMark span:nth-child(1) { left: 8px; top: 2px; }
+    .activityMark span:nth-child(2) { left: 3px; top: 13px; }
+    .activityMark span:nth-child(3) { left: 14px; top: 13px; }
+
+    .activityBeam {
+      position: absolute;
+      left: 42px;
+      right: 68px;
+      top: 21px;
+      height: 18px;
+      pointer-events: none;
+      opacity: 0;
+      z-index: 0;
+    }
+
+    .activityBeam span {
+      position: absolute;
+      top: 7px;
+      left: 0;
+      width: 5px;
+      height: 5px;
+      border-radius: 999px;
+      background: #ff3366;
+      box-shadow: 0 0 12px rgba(255,51,102,0.95), 0 0 22px rgba(18,224,255,0.35);
+    }
+
+    body.bp-working .activityBeam { opacity: 1; }
+    body.bp-working .activityBeam span { animation: bpActivityRun 880ms cubic-bezier(.2,.8,.2,1) infinite; }
+    body.bp-working .activityBeam span:nth-child(2) { animation-delay: 110ms; }
+    body.bp-working .activityBeam span:nth-child(3) { animation-delay: 220ms; }
+    body.bp-working .activityMark span {
+      animation: bpTrianglePulse 720ms ease-in-out infinite alternate;
+    }
+
+    @keyframes bpActivityRun {
+      from { transform: translateX(0) scale(0.78); opacity: 0.15; }
+      18% { opacity: 1; }
+      to { transform: translateX(calc(100vw - 146px)) scale(1); opacity: 0; }
+    }
+
+    @keyframes bpTrianglePulse {
+      from { transform: scale(0.82); opacity: 0.58; }
+      to { transform: scale(1.15); opacity: 1; }
     }
 
     .statusActions {
@@ -462,9 +535,13 @@
   <div class="wrap">
     <div class="panel top">
       <div class="brand">
-        <div>
+        <div class="activityBeam" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="brandLockup">
+          <div id="activityMark" class="activityMark" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div>
           <h1><span class="mark">Browser</span> Pilot</h1>
           <div class="brandSub">Context radar online</div>
+          </div>
         </div>
         <div class="statusActions">
           <div class="pill" id="connPill"><span class="statusDot" id="statusDot"></span><span id="connText">connecting…</span></div>

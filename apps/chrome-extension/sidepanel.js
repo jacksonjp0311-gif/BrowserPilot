@@ -8,6 +8,7 @@ const els = {
   suggestBtn: document.getElementById('suggestBtn'),
   connPill: document.getElementById('connPill'),
   connText: document.getElementById('connText'),
+  activityMark: document.getElementById('activityMark'),
   errorBox: document.getElementById('errorBox'),
   contextHint: document.getElementById('contextHint'),
   threatScanBtn: document.getElementById('threatScanBtn') || document.getElementById('captureBtn'),
@@ -51,6 +52,17 @@ let threatLockActive = false;
 let lastThreatReview = null;
 let lastAuthorityReport = null;
 let lastExtractedIps = null;
+let _activityTimer = null;
+
+function setPanelActivity(active = true, holdMs = 900) {
+  document.body.classList.toggle('bp-working', Boolean(active));
+  clearTimeout(_activityTimer);
+  if (active && holdMs > 0) {
+    _activityTimer = setTimeout(() => {
+      document.body.classList.remove('bp-working');
+    }, holdMs);
+  }
+}
 
 function timeLabel(ts = Date.now()) {
   const d = new Date(ts);
@@ -602,6 +614,7 @@ async function maybeExecuteJarvisFromText(text) {
 
 async function sendMessage(text) {
   if (!selectedAgentId) throw new Error('No agent selected.');
+  setPanelActivity(true, CHAT_SYNC_TIMEOUT_MS);
 
   const history = chatLog
     .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && !m.streaming)
@@ -662,12 +675,14 @@ async function sendMessage(text) {
   } catch (e) {
     await bg({ type: 'AGNT_ABORT_REQUEST', requestId }).catch(() => {});
     setHeaderStatus('linked');
+    setPanelActivity(false);
     updatePending(requestId, `Sync failed: ${e?.message || String(e)}\n\nCheck AGNT is running at http://localhost:3333, then press Refresh and try again.`, true);
     return;
   }
 
   if (!res?.ok) {
     setHeaderStatus('linked');
+    setPanelActivity(false);
     const detail = res?.details ? `\n\nDetails: ${JSON.stringify(res.details).slice(0, 800)}` : '';
     updatePending(requestId, 'Sync failed' + detail, true);
     return;
@@ -678,6 +693,7 @@ async function sendMessage(text) {
     : JSON.stringify(res.response, null, 2);
 
   setHeaderStatus('linked');
+  setPanelActivity(false);
   updatePending(requestId, responseText, true);
   await telemetry('sidepanel_chat_done', {
     requestId,
@@ -1007,6 +1023,134 @@ function insertThreatReviewPrompt(report) {
   ].join('\n');
   insertIntoComposer(prompt);
   pushMsg('assistant', '[threat review] Redacted report inserted. Press Send to ask the agent to analyze it.');
+}
+
+function compactThreatReportBundle(report, surfaces = {}) {
+  const redacted = report || {};
+  const findings = Array.isArray(redacted.findings) ? redacted.findings : [];
+  const indicators = Array.isArray(redacted.ipIndicators) ? redacted.ipIndicators : [];
+  return {
+    schemaVersion: 'browserpilot.threatReportToChat.v1',
+    reportId: redacted.reportId || null,
+    createdAt: new Date().toISOString(),
+    page: {
+      url: redacted.page?.url || pageContext?.page?.url || null,
+      origin: redacted.page?.origin || pageContext?.page?.origin || null,
+      title: redacted.page?.title || pageContext?.page?.title || null,
+      readyState: redacted.page?.readyState || null
+    },
+    risk: redacted.risk || null,
+    counts: redacted.counts || null,
+    recommendedAction: redacted.recommendedAction || null,
+    topFindings: findings.slice(0, 8).map((finding, index) => ({
+      n: index + 1,
+      id: finding.id || null,
+      category: finding.category || 'finding',
+      severity: finding.severity || 'info',
+      reason: String(finding.reason || '').slice(0, 220),
+      preview: String(finding.redactedPreview || '').slice(0, 220),
+      evidenceHash: finding.evidenceHash || null,
+      element: {
+        tag: finding.selectorHints?.tag || null,
+        role: finding.selectorHints?.role || null,
+        label: finding.selectorHints?.ariaLabel || finding.selectorHints?.id || null,
+        className: finding.selectorHints?.className || null
+      },
+      rect: finding.rect ? {
+        x: Math.round(Number(finding.rect.x || 0)),
+        y: Math.round(Number(finding.rect.y || 0)),
+        w: Math.round(Number(finding.rect.width || 0)),
+        h: Math.round(Number(finding.rect.height || 0))
+      } : null,
+      ips: (finding.ipIndicators || []).slice(0, 4)
+    })),
+    ipIndicators: indicators.slice(0, 12).map((ip) => ({
+      value: ip.value,
+      classification: ip.classification,
+      sourceField: ip.sourceField || null,
+      preview: String(ip.surroundingPreview || ip.redactedContext || '').slice(0, 160)
+    })),
+    localSurfaces: surfaces,
+    limitations: [
+      'Local DOM-first scanner only',
+      'A risk signal is not proof of malware or attacker identity',
+      'IP indicators are infrastructure signals only',
+      'Browser-controlled pages and restricted URLs may block extension injection'
+    ]
+  };
+}
+
+async function reportThreatToChat(report) {
+  const redacted = report || lastThreatScan;
+  if (!redacted) throw new Error('Run Threat Scan first.');
+  setPanelActivity(true, CHAT_SYNC_TIMEOUT_MS);
+  redacted.lifecycle = { ...(redacted.lifecycle || threatLifecycle(redacted)), status: 'reported_to_chat', userDecision: 'report_to_chat', lastUpdatedAt: new Date().toISOString() };
+  lastThreatScan = redacted;
+  queueSaveState();
+
+  if (!selectedAgentId) await ensureAndLoadAgents();
+  if (!selectedAgentId) throw new Error('No default agent selected. Press Refresh, choose an agent, then report again.');
+
+  pushMsg('assistant', '[threat report] assembling local snapshot, radar context, and compact evidence bundle...');
+  try { await captureActiveTab(); } catch {}
+
+  let viewport = { captured: false, reason: 'not requested' };
+  if (typeof targetTabId === 'number') {
+    const cap = await bg({ type: 'AGNT_CAPTURE_VISIBLE_TAB', tabId: targetTabId }).catch(e => ({ ok: false, error: e?.message || String(e) }));
+    viewport = cap?.ok && cap.dataUrl
+      ? { captured: true, bytesApprox: Math.round(String(cap.dataUrl).length * 0.75), tabId: cap.tabId || targetTabId, sentToChat: false }
+      : { captured: false, reason: cap?.error || 'capture failed' };
+  }
+
+  const surfaces = {
+    pageContext: pageContextStats(),
+    cyberSnapshot: lastCyberSnapshot ? {
+      available: true,
+      textChars: String(lastCyberSnapshot.text || '').length,
+      rect: lastCyberSnapshot.rect || null,
+      updatedAt: lastCyberSnapshot.capturedAt || lastCyberSnapshot.lastChangedAt || null
+    } : { available: false },
+    contextRadar: lastRadarTarget ? {
+      available: true,
+      textPreview: String(lastRadarTarget.text || lastRadarTarget.textPreview || '').slice(0, 180),
+      role: lastRadarTarget.role || null,
+      score: lastRadarTarget.score || null
+    } : { available: false },
+    viewportScreenshot: viewport
+  };
+  const bundle = compactThreatReportBundle(redacted, surfaces);
+  lastThreatReview = {
+    schemaVersion: 'browserpilot.threatReviewRequest.v1',
+    reportId: redacted.reportId,
+    reviewMode: 'compact_local_investigation',
+    humanApproved: true,
+    createdAt: new Date().toISOString(),
+    status: 'chat_started'
+  };
+  queueSaveState();
+
+  const prompt = [
+    '[BrowserPilot Threat Report]',
+    'Review this compact local evidence bundle. Keep the report short and practical.',
+    '',
+    'Rules:',
+    '- Do not claim this proves malware, attribution, identity, or compromise.',
+    '- Classify as benign, suspicious, likely threat, or inconclusive.',
+    '- Use Cyber Snapshot, Context Radar, Threat Scan, and page metadata together.',
+    '- If more browser observation is needed, request low-risk AGNT_EXEC actions only.',
+    '- Recommend: continue, warn, require confirmation, block actions, or gather more local evidence.',
+    '',
+    JSON.stringify(bundle)
+  ].join('\n');
+
+  pushMsg('assistant', '[threat report] sent to chat. Processing compact investigation...');
+  await telemetry('threat_report_to_chat_started', {
+    reportId: redacted.reportId || null,
+    risk: redacted.risk || null,
+    counts: redacted.counts || null,
+    surfaces
+  });
+  await sendMessage(prompt);
 }
 
 function createAuthorityReport() {
@@ -1381,6 +1525,10 @@ chrome.runtime.onMessage.addListener((msg) => {
     insertThreatReviewPrompt(msg.report || lastThreatScan);
   }
 
+  if (msg?.type === 'BROWSERPILOT_THREAT_REPORT_TO_CHAT') {
+    reportThreatToChat(msg.report || lastThreatScan).catch(e => { setPanelActivity(false); setError(e.message); });
+  }
+
   if (msg?.type === 'BROWSERPILOT_EXTRACT_IPS_FROM_THREAT_REPORT') {
     const result = buildIpExtractionResult([{ sourceField: 'threat_scan', text: threatReportText(msg.report || lastThreatScan) }], 'threat_scan');
     renderIpExtraction(result);
@@ -1398,13 +1546,19 @@ chrome.runtime.onMessage.addListener((msg) => {
 
     if (error) {
       setHeaderStatus('linked');
+      setPanelActivity(false);
       updatePending(requestId, `Sync failed: ${error}`, true);
       return;
     }
 
     if (typeof content === 'string') {
-      if (done) setHeaderStatus('linked');
-      else setHeaderStatus('syncing');
+      if (done) {
+        setHeaderStatus('linked');
+        setPanelActivity(false);
+      } else {
+        setHeaderStatus('syncing');
+        setPanelActivity(true, CHAT_SYNC_TIMEOUT_MS);
+      }
       updatePending(requestId, content, Boolean(done));
     }
   }
@@ -1453,6 +1607,9 @@ els.input.addEventListener('keydown', (e) => {
 
 els.agentSearch.addEventListener('focus', () => { openList(); renderAgentList(); });
 els.agentSearch.addEventListener('input', () => { openList(); renderAgentList(); });
+document.addEventListener('click', (e) => {
+  if (e.target.closest('button, a, input, textarea, .comboList')) setPanelActivity(true, 900);
+}, true);
 document.addEventListener('click', (e) => { if (!e.target.closest('.combo')) closeList(); });
 
 (async function init() {

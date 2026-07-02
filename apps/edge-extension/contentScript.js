@@ -1022,6 +1022,7 @@
       role: el?.getAttribute?.('role') || '',
       ariaLabel: el?.getAttribute?.('aria-label') || '',
       id: el?.id || '',
+      className: String(el?.className || '').slice(0, 160),
       nearestHeading: nearestHeadingText(el)
     };
   }
@@ -1215,9 +1216,11 @@
     return findings.map((finding, index) => {
       const ips = ipsForThreatFinding(finding, report);
       const ipRows = ips.length
-        ? ips.map((ip) => `<li><code>${escapeThreatHtml(ip.value)}</code><span>${escapeThreatHtml(ip.classification)}</span></li>`).join('')
+        ? ips.map((ip) => `<li><code>${escapeThreatHtml(ip.value)}</code><span>${escapeThreatHtml([ip.classification, ip.sourceField].filter(Boolean).join(' | '))}</span></li>`).join('')
         : '<li><code>none</code><span>no local IP indicator on this card</span></li>';
       const hints = finding.selectorHints || {};
+      const evidence = finding.evidence || {};
+      const rect = finding.rect || {};
       const title = `${index + 1}. ${String(finding.category || 'finding').replace(/_/g, ' ')}`;
       return `
         <article class="threat-evidence-card" data-finding-id="${escapeThreatHtml(finding.id)}" data-severity="${escapeThreatHtml(finding.severity || 'info')}">
@@ -1230,6 +1233,10 @@
           <dl>
             <dt>Risk</dt><dd>${escapeThreatHtml(finding.severity || 'info')}</dd>
             <dt>Element</dt><dd>${escapeThreatHtml([hints.tag, hints.role, hints.ariaLabel || hints.id].filter(Boolean).join(' | ') || 'unknown')}</dd>
+            <dt>Heading</dt><dd>${escapeThreatHtml(hints.nearestHeading || 'none')}</dd>
+            <dt>Visible</dt><dd>${escapeThreatHtml(evidence.visibleToUser === false ? 'no' : 'yes')}${evidence.hiddenFromUser ? ' | hidden signal' : ''}</dd>
+            <dt>Rect</dt><dd>${Number.isFinite(rect.x) ? escapeThreatHtml(`${rect.x},${rect.y} ${rect.width}x${rect.height}`) : 'unknown'}</dd>
+            <dt>CSS</dt><dd>${escapeThreatHtml(hints.cssPath || 'unknown')}</dd>
             <dt>Hash</dt><dd>${escapeThreatHtml(finding.evidenceHash || '')}</dd>
           </dl>
           <div class="ip-list"><span>IP indicators</span><ul>${ipRows}</ul></div>
@@ -1287,7 +1294,10 @@
         <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
         <div class="scanline"></div>
         <h2>THREAT SIGNAL DETECTED</h2>
-        <div class="risk ${report.risk.level}">Risk: ${report.risk.level.toUpperCase()} | Score: ${report.risk.score}</div>
+        <div class="riskRow">
+          <div class="risk ${report.risk.level}">Risk: ${report.risk.level.toUpperCase()} | Score: ${report.risk.score}</div>
+          <button class="reportChat" data-action="report-chat" title="Send a compact local evidence bundle to chat for review">Report to Chat</button>
+        </div>
         <p>${report.risk.summary}</p>
         <p>Findings: ${report.counts.findings} | IP indicators: ${report.counts.ipIndicators}</p>
         <p class="small">Agent actions paused. Network indicators are not proof of attacker identity.</p>
@@ -1306,7 +1316,8 @@
             <h3>THREAT SCREENS</h3>
             <p>${escapeThreatHtml(report.counts.findings)} finding(s) | ${escapeThreatHtml(report.counts.ipIndicators)} IP indicator(s) | ${escapeThreatHtml(String(report.risk.level || 'low').toUpperCase())}</p>
           </div>
-          <button data-action="close-evidence" title="Close evidence HUD">x</button>
+          <button class="reportChat mini" data-action="report-chat" title="Send compact evidence to chat">Report to Chat</button>
+          <button class="closeEvidence" data-action="close-evidence" title="Close evidence HUD">&times;</button>
         </div>
         <div class="threat-evidence-tools">
           <div class="filters">${renderThreatSeverityFilters(report)}</div>
@@ -1325,7 +1336,11 @@
       @keyframes bpThreatSweep{from{transform:translateX(0)}to{transform:translateX(360%)}}
       #browserpilot-threat-root h2{position:relative;margin:0 0 10px;color:#ffdddd;letter-spacing:.12em;font-size:17px}
       #browserpilot-threat-root p,#browserpilot-threat-root .risk{position:relative;margin:8px 0;color:rgba(255,255,255,.86)}
+      #browserpilot-threat-root .riskRow{position:relative;display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:8px 0}
       #browserpilot-threat-root .risk{display:inline-block;border:1px solid rgba(255,149,0,.5);border-radius:999px;padding:6px 10px;background:rgba(254,78,78,.14)}
+      #browserpilot-threat-root .reportChat{border-color:rgba(255,51,102,.75);background:linear-gradient(90deg,rgba(254,78,78,.35),rgba(209,61,229,.18));box-shadow:0 0 16px rgba(254,78,78,.38),0 0 0 1px rgba(255,255,255,.05) inset;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+      #browserpilot-threat-root .reportChat:hover{border-color:rgba(255,223,107,.75);box-shadow:0 0 24px rgba(255,51,102,.62)}
+      #browserpilot-threat-root .reportChat.mini{width:auto;height:30px;padding:0 10px;white-space:nowrap}
       #browserpilot-threat-root .small{font-size:12px;color:rgba(255,216,200,.78)}
       #browserpilot-threat-root .actions{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
       #browserpilot-threat-root button{border:1px solid rgba(255,255,255,.14);border-radius:10px;background:rgba(255,255,255,.07);color:#fff;padding:9px;cursor:pointer}
@@ -1335,7 +1350,7 @@
       #browserpilot-threat-root .threat-evidence-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:14px 14px 10px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035)}
       #browserpilot-threat-root .threat-evidence-head h3{margin:0;color:#fff0bb;letter-spacing:.13em;font-size:13px}
       #browserpilot-threat-root .threat-evidence-head p{margin:5px 0 0;font-size:12px;color:rgba(255,255,255,.72)}
-      #browserpilot-threat-root .threat-evidence-head button{width:32px;height:30px;padding:0}
+      #browserpilot-threat-root .threat-evidence-head .closeEvidence{width:32px;height:30px;padding:0;display:grid;place-items:center;line-height:1;border-radius:999px}
       #browserpilot-threat-root .threat-evidence-tools{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:grid;gap:10px}
       #browserpilot-threat-root .filters{display:flex;flex-wrap:wrap;gap:6px}
       #browserpilot-threat-root .filters .filter{font-size:11px;padding:6px 8px;border-radius:999px}.filters .filter.active{border-color:rgba(255,223,107,.72);background:rgba(255,223,107,.16)}
@@ -1378,6 +1393,7 @@
       }
       if (action === 'ack') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_THREAT_HUD_ACKNOWLEDGED', report }).catch(() => {});
       if (action === 'sandbox') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_THREAT_HUD_SEND_TO_SANDBOX', report }).catch(() => {});
+      if (action === 'report-chat') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_THREAT_REPORT_TO_CHAT', report }).catch(() => {});
       if (action === 'block') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_THREAT_HUD_BLOCK_ACTIONS', report }).catch(() => {});
       if (action === 'ips') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_EXTRACT_IPS_FROM_THREAT_REPORT', report }).catch(() => {});
       if (action === 'dismiss') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_THREAT_HUD_DISMISSED', report }).catch(() => {});

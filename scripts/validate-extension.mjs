@@ -86,6 +86,9 @@ for (const [label, extensionDir] of targets) {
   if ((label === 'edge' || label === 'chrome') && (!contentText.includes('function renderThreatTimeline') || !contentText.includes('data-action="filter-threats"'))) {
     throw new Error(`[${label}] contentScript.js must expose Threat Timeline filters`);
   }
+  if ((label === 'edge' || label === 'chrome') && (!contentText.includes('data-action="report-chat"') || !sidepanelText.includes('function reportThreatToChat'))) {
+    throw new Error(`[${label}] extension must expose Threat Report to Chat flow`);
+  }
   if ((label === 'edge' || label === 'chrome') && !backgroundText.includes('BROWSERPILOT_START_THREAT_SCAN')) {
     throw new Error(`[${label}] background.js must route BROWSERPILOT_START_THREAT_SCAN`);
   }

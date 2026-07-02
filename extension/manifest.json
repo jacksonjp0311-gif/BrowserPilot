@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BrowserPilot",
-  "version": "0.3.4",
-  "version_name": "0.3.4 Threat Timeline",
+  "version": "0.3.5",
+  "version_name": "0.3.5 Threat Report Flow",
   "description": "Let an AGNT agent understand and operate the browser tab you are already using.",
   "action": {
     "default_title": "BrowserPilot",

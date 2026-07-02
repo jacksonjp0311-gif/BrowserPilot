@@ -1,4 +1,4 @@
-# BrowserPilot (Edge Extension)
+# BrowserPilot for Edge
 
 This is a Manifest V3 Edge extension that gives you a **side panel agent chat** on every page.
 
@@ -22,7 +22,7 @@ BrowserPilot keeps the AGNT bridge from the Edge Tab Operator prototype. It conn
 
 For the standalone BrowserPilot repo, select:
 
-`C:\\Users\\jacks\\OneDrive\\Desktop\\browser-pilot\\extension`
+`C:\\Users\\jacks\\OneDrive\\Desktop\\browser-pilot\\apps\\edge-extension`
 
 5. Open the extension **Options** page and set:
    - AGNT Base URL

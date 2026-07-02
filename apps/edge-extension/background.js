@@ -175,6 +175,43 @@ async function openNewTab(url) {
   return { openedTabId: tab.id };
 }
 
+async function enableSidePanelAction() {
+  if (!chrome.sidePanel?.setPanelBehavior) return;
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+}
+
+async function openPanelForTab(tabId) {
+  if (chrome.sidePanel?.open && typeof tabId === 'number') {
+    try {
+      await chrome.sidePanel.open({ tabId });
+      return { ok: true, mode: 'sidePanel', tabId };
+    } catch (e) {
+      const message = e?.message || String(e);
+      if (!/user gesture/i.test(message)) throw e;
+      const url = chrome.runtime.getURL('sidepanel.html');
+      const tab = await chrome.tabs.create({ url, active: true });
+      return { ok: true, mode: 'tabFallback', tabId: tab?.id ?? null, sidePanelError: message };
+    }
+  }
+
+  const url = chrome.runtime.getURL('sidepanel.html');
+  const tab = await chrome.tabs.create({ url, active: true });
+  return { ok: true, mode: 'tabFallback', tabId: tab?.id ?? null };
+}
+
+async function refreshContentScriptsInOpenTabs() {
+  if (!chrome.scripting?.executeScript) return;
+  const tabs = await chrome.tabs.query({});
+  await Promise.allSettled(tabs.map(async (tab) => {
+    if (typeof tab?.id !== 'number') return;
+    if (!/^https?:\/\//i.test(tab.url || '')) return;
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['contentScript.js']
+    });
+  }));
+}
+
 async function closeCurrentTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error('No active tab');
@@ -194,11 +231,46 @@ async function getActiveTabId() {
   return tab?.id;
 }
 
+async function resolveLiveTabId(preferredTabId) {
+  if (typeof preferredTabId === 'number') {
+    try {
+      await chrome.tabs.get(preferredTabId);
+      return preferredTabId;
+    } catch {
+      // The side panel can keep a tab id after Edge closes/replaces that tab.
+    }
+  }
+  return await getActiveTabId();
+}
+
 async function sendContentMessage(msg) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error('No active tab');
-  const res = await chrome.tabs.sendMessage(tab.id, msg);
-  return res;
+  return sendTabMessage(tab.id, msg);
+}
+
+async function ensureContentScript(tabId) {
+  if (typeof tabId !== 'number') throw new Error('No tabId for content script injection.');
+  if (!chrome.scripting?.executeScript) return;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['contentScript.js']
+    });
+  } catch (e) {
+    throw new Error('Could not inject page tools into this Edge tab: ' + (e?.message || String(e)));
+  }
+}
+
+async function sendTabMessage(tabId, msg) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, msg);
+  } catch (e) {
+    const message = e?.message || String(e);
+    if (!/Receiving end does not exist|Could not establish connection/i.test(message)) throw e;
+    await ensureContentScript(tabId);
+    return await chrome.tabs.sendMessage(tabId, msg);
+  }
 }
 
 // --- AGNT Agent Creation (silent - no auto-open) ---
@@ -239,6 +311,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg?.type === 'AGNT_LIST_AGENTS') { const data = await agntFetch('/api/agents/'); sendResponse({ ok: true, agents: data.agents || [] }); return; }
       if (msg?.type === 'AGNT_ENSURE_DEFAULT_AGENT') { const out = await ensureDefaultAgent(); sendResponse({ ok: true, ...out }); return; }
       if (msg?.type === 'AGNT_CHAT') { const { agentId, message, context } = msg; const resp = await agntAgentChat(agentId, { message, context }); sendResponse({ ok: true, data: { response: resp } }); return; }
+      if (msg?.type === 'AGNT_OPEN_SIDEPANEL' || msg?.type === 'BROWSERPILOT_OPEN_SIDEPANEL') {
+        const tabId = typeof sender?.tab?.id === 'number'
+          ? sender.tab.id
+          : await resolveLiveTabId(msg.tabId);
+        if (typeof tabId !== 'number') { sendResponse({ ok: false, error: 'No tab context for side panel.' }); return; }
+        sendResponse(await openPanelForTab(tabId));
+        return;
+      }
       if (msg?.type === 'AGNT_OPEN_CHAT_AND_SEND') {
         sendResponse({ ok: true, tabId: null, disabled: true, reason: 'BrowserPilot side-panel chat is sidepanel-only; no AGNT tabs will be opened.' });
         return;
@@ -260,8 +340,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg?.type === 'AGNT_EXEC_COMMAND') { const { command, pageContext, edgeCopilot } = msg; const r = await execCommandWithTelemetry(command, pageContext, Boolean(edgeCopilot)); sendResponse(r); return; }
 
       if (msg?.type === 'AGNT_CAPTURE_VISIBLE_TAB' || msg?.type === 'BROWSERPILOT_CAPTURE_VISIBLE_TAB') {
-        let tabId = msg.tabId ?? sender?.tab?.id;
-        if (typeof tabId !== 'number') tabId = await getActiveTabId();
+        const tabId = await resolveLiveTabId(msg.tabId ?? sender?.tab?.id);
         if (typeof tabId !== 'number') { sendResponse({ ok: false, error: 'No active tabId for screenshot capture.' }); return; }
         const tab = await chrome.tabs.get(tabId);
         if (typeof tab?.windowId !== 'number') { sendResponse({ ok: false, error: 'No windowId for screenshot capture.' }); return; }
@@ -275,9 +354,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       if (msg?.type === 'AGNT_CAPTURE_ACTIVE_TAB') {
-        const tabId = msg.tabId ?? await getActiveTabId();
+        const tabId = await resolveLiveTabId(msg.tabId);
         if (typeof tabId !== 'number') throw new Error('No active tab');
-        const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_CAPTURE_CONTEXT' });
+        const res = await sendTabMessage(tabId, { type: 'AGNT_CAPTURE_CONTEXT' });
         await recordTelemetry('context_captured', {
           tabId,
           url: res?.context?.page?.url,
@@ -290,9 +369,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       if (msg?.type === 'AGNT_START_CYBER_SNAPSHOT' || msg?.type === 'BROWSERPILOT_START_CYBER_SNAPSHOT') {
-        const tabId = msg.tabId ?? await getActiveTabId();
+        const tabId = await resolveLiveTabId(msg.tabId);
         if (typeof tabId !== 'number') throw new Error('No active tab');
-        const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_START_CYBER_SNAPSHOT' });
+        const res = await sendTabMessage(tabId, { type: 'AGNT_START_CYBER_SNAPSHOT' });
         await recordTelemetry(res?.ok ? 'cyber_snapshot_started' : 'cyber_snapshot_failed', {
           tabId,
           ok: Boolean(res?.ok),
@@ -303,9 +382,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       if (msg?.type === 'AGNT_START_REGION_WATCH' || msg?.type === 'BROWSERPILOT_START_REGION_WATCH') {
-        const tabId = msg.tabId ?? await getActiveTabId();
+        const tabId = await resolveLiveTabId(msg.tabId);
         if (typeof tabId !== 'number') throw new Error('No active tab');
-        const res = await chrome.tabs.sendMessage(tabId, {
+        const res = await sendTabMessage(tabId, {
           type: 'AGNT_START_REGION_WATCH',
           rect: msg.rect,
           previousText: msg.previousText || '',
@@ -322,18 +401,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       if (msg?.type === 'AGNT_STOP_REGION_WATCH' || msg?.type === 'BROWSERPILOT_STOP_REGION_WATCH') {
-        const tabId = msg.tabId ?? await getActiveTabId();
+        const tabId = await resolveLiveTabId(msg.tabId);
         if (typeof tabId !== 'number') throw new Error('No active tab');
-        const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_STOP_REGION_WATCH' });
+        const res = await sendTabMessage(tabId, { type: 'AGNT_STOP_REGION_WATCH' });
         await recordTelemetry('cyber_region_watch_stopped', { tabId, ok: Boolean(res?.ok) });
         sendResponse({ ...(res || {}), tabId });
         return;
       }
 
       if (msg?.type === 'BROWSERPILOT_START_CONTEXT_RADAR') {
-        const tabId = msg.tabId ?? await getActiveTabId();
+        const tabId = await resolveLiveTabId(msg.tabId);
         if (typeof tabId !== 'number') throw new Error('No active tab');
-        const res = await chrome.tabs.sendMessage(tabId, { type: 'BROWSERPILOT_START_CONTEXT_RADAR' });
+        const res = await sendTabMessage(tabId, { type: 'BROWSERPILOT_START_CONTEXT_RADAR' });
         await recordTelemetry(res?.ok ? 'context_radar_started' : 'context_radar_failed', {
           tabId,
           ok: Boolean(res?.ok),
@@ -344,10 +423,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       if (msg?.type === 'BROWSERPILOT_START_THREAT_SCAN') {
-        const tabId = msg.tabId ?? await getActiveTabId();
+        const tabId = await resolveLiveTabId(msg.tabId);
         if (typeof tabId !== 'number') throw new Error('No active tab');
         await recordTelemetry('threat_scan_started', { tabId });
-        const res = await chrome.tabs.sendMessage(tabId, { type: 'BROWSERPILOT_START_THREAT_SCAN' });
+        const res = await sendTabMessage(tabId, { type: 'BROWSERPILOT_START_THREAT_SCAN' });
         await recordTelemetry(res?.ok ? 'threat_scan_completed' : 'threat_scan_failed', {
           tabId,
           ok: Boolean(res?.ok),
@@ -360,7 +439,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       if (msg?.type === 'AGNT_EXEC_ACTIVE_TAB') {
-        const tabId = msg.tabId ?? await getActiveTabId();
+        const tabId = await resolveLiveTabId(msg.tabId);
         if (typeof tabId !== 'number') throw new Error('No active tab');
 
         const cmd = msg.command || {};
@@ -404,7 +483,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
 
-        const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_EXEC', command: cmd });
+        const res = await sendTabMessage(tabId, { type: 'AGNT_EXEC', command: cmd });
         await recordTelemetry(res?.ok === false ? 'command_error' : 'command_executed', {
           tabId,
           kind,
@@ -426,7 +505,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // --- Init ---
-chrome.runtime.onInstalled.addListener(() => {});
+chrome.runtime.onInstalled.addListener(() => {
+  enableSidePanelAction().catch(() => {});
+  refreshContentScriptsInOpenTabs().catch(() => {});
+});
+chrome.runtime.onStartup?.addListener(() => {
+  enableSidePanelAction().catch(() => {});
+  refreshContentScriptsInOpenTabs().catch(() => {});
+});
+enableSidePanelAction().catch(() => {});
+refreshContentScriptsInOpenTabs().catch(() => {});
+
+chrome.action?.onClicked?.addListener(async (tab) => {
+  try {
+    await openPanelForTab(tab?.id);
+  } catch (e) {
+    const url = chrome.runtime.getURL('sidepanel.html');
+    await chrome.tabs.create({ url, active: true });
+  }
+});
+
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
     const tab = await chrome.tabs.get(tabId);

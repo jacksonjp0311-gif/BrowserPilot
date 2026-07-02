@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BrowserPilot for Chrome",
-  "version": "0.2.0",
-  "version_name": "0.2.0 Threat Radar",
+  "version": "0.3.1",
+  "version_name": "0.3.1 Threat Radar",
   "description": "Let an AGNT agent understand and operate the Chrome tab you are already using.",
   "minimum_chrome_version": "114",
   "action": {

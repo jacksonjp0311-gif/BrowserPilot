@@ -135,7 +135,7 @@ IP addresses are network indicators only. They are not proof of attacker identit
 
 ## Network IOC Capture / Authority Report Package
 
-Network IOC Capture is optional and gated. BrowserPilot v0.2 generates local IOC/evidence packages only after a user-reviewed suspicious or likely threat flow.
+Network IOC Capture is optional and gated. BrowserPilot v0.3.1 generates local IOC/evidence packages only after a user-reviewed suspicious or likely threat flow.
 
 The Authority Report Package can include domains, URLs, extracted IP indicators, observed request IPs only if a future optional permission is enabled, redirect chains and timestamps when available, and the sandbox wipe certificate.
 

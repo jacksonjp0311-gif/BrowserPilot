@@ -3,7 +3,12 @@
 
 (function () {
   const ID = 'agnt-browser-agents-fab';
-  if (document.getElementById(ID)) return;
+  const STYLE_ID = 'agnt-browser-agents-fab-style';
+
+  // Extension reloads invalidate old content-script listeners, but the DOM
+  // button can remain on the page. Replace it so clicks use the current runtime.
+  document.getElementById(ID)?.remove();
+  document.getElementById(STYLE_ID)?.remove();
 
   const fab = document.createElement('button');
   fab.id = ID;
@@ -12,6 +17,7 @@
   fab.title = 'Open BrowserPilot';
 
   const style = document.createElement('style');
+  style.id = STYLE_ID;
   style.textContent = `
     #${ID} {
       position: fixed;
@@ -1235,7 +1241,7 @@
 
   fab.addEventListener('click', () => {
     openSidePanelWithContext().catch((e) => {
-      console.error('[BrowserPilot] open failed:', e);
+      console.warn('[BrowserPilot] open failed:', e?.message || String(e));
       alert('BrowserPilot: could not open side panel.\n\nOpen edge://extensions → BrowserPilot → Service Worker (Inspect) to see the error.\n\nError: ' + (e?.message || String(e)));
     });
   });

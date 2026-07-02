@@ -10,6 +10,7 @@ BrowserPilot keeps the AGNT bridge from the Edge Tab Operator prototype. It conn
 - Opens a **Side Panel** chat UI
 - Captures page URL/title and current text selection
 - Talks to your local AGNT server (`http://localhost:3333` by default)
+- User-triggered Threat Scan, Cyber Snapshot, Context Radar, Scan Report, and Extract IP Address surfaces
 
 ## Setup (Edge)
 
@@ -30,5 +31,5 @@ For the standalone BrowserPilot repo, select:
 
 ## Notes
 
-- This first version uses a long-lived token pasted into Options. If you want, we can evolve it to a safer short-lived token broker flow.
-- Next upgrade: bind execution to the originating tab id so commands cannot drift to a newly focused tab.
+- This version uses a long-lived token pasted into Options. The planned hardening path is a short-lived local token broker.
+- BrowserPilot keeps browser actions explicit through `AGNT_EXEC` and keeps safety findings evidence-bound. See `..\..\docs\security-model.md`, `..\..\docs\rcc-nexus.md`, and `..\..\docs\rehydration-protocol.md`.

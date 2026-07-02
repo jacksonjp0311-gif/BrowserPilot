@@ -13,6 +13,36 @@ BrowserPilot is a **local-first browser-agent bridge** for **AGNT** and **Hermes
 AGNT_EXEC: [{"kind":"navigate","url":"https://example.com"},{"kind":"click","css":"button#login"}]
 ```
 
+## README Route Surfaces
+
+BrowserPilot now uses four README surfaces so humans and agents can re-enter the repo without losing the current feature map.
+
+### Human README
+
+This root README is the human operator surface. It explains the extension, install path, visible controls, safety boundaries, screenshots, and packaging flow.
+
+### AI Agent README
+
+[`README_90_SECONDS.md`](README_90_SECONDS.md) is the quick rehydration surface. It gives agents and returning maintainers the read order, validation commands, and durable-change boundary before they edit.
+
+### RCC Nexus
+
+[`docs/rcc-nexus.md`](docs/rcc-nexus.md), [`rcc/README.md`](rcc/README.md), and [`rcc/nexus/README.md`](rcc/nexus/README.md) define the BrowserPilot route map, Echo Location, evidence surfaces, and non-claim locks.
+
+RCC tells the agent what the repository means. RCC Nexus tells the agent where it is. Validation tells the agent whether reality agreed.
+
+### Rehydration Protocol
+
+[`docs/rehydration-protocol.md`](docs/rehydration-protocol.md) is the resume protocol for stale sessions, cross-repo syncs, release packaging, and push claims.
+
+```text
+anchor -> load repo origin -> measure drift -> rehydrate -> validate -> compound
+```
+
+No origin alignment, no durable mutation. No validation, no completion claim.
+
+Related risk map: [`docs/failure-modes.md`](docs/failure-modes.md).
+
 ## ✨ New: Edge Copilot (AGNT + SymTorch) 🛡️🧠
 
 BrowserPilot now supports a **3‑state control mode**:
@@ -315,6 +345,8 @@ browser-pilot/
     policies/                  Versioned policy bundles (symtorch.policyBundle.v1)
 
   docs/                        Protocol + architecture + security
+  rcc/                         RCC Nexus route and mini README surface
+  reports/rcc_nexus/           Optional RCC evidence reports
   scripts/                     packaging + validation + icon gen
   dist/                        prebuilt zip artifacts
 ```
@@ -361,6 +393,7 @@ browser-pilot/
 
 ```powershell
 npm run validate
+npm run validate:rcc
 npm run icons:gen
 npm run package:all
 # or individually:

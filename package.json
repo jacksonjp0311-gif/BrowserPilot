@@ -5,6 +5,7 @@
   "description": "BrowserPilot lets agents operate the browser tab the user is already using.",
   "scripts": {
     "validate": "node ./scripts/validate-extension.mjs",
+    "validate:rcc": "node ./scripts/rcc/check_rcc_nexus.mjs",
     "icons:gen": "node ./scripts/generate-icons.mjs",
     "package:edge": "powershell -ExecutionPolicy Bypass -File ./scripts/package-extension.ps1 -Browser edge",
     "package:chrome": "powershell -ExecutionPolicy Bypass -File ./scripts/package-extension.ps1 -Browser chrome",

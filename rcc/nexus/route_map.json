@@ -1,0 +1,68 @@
+{
+  "schema": "browserpilot.rcc_nexus.route_map.v1",
+  "version": "BrowserPilot-RCC-N-v0.1",
+  "lastVerified": "2026-07-02",
+  "adoptionProfile": "lite-standard",
+  "nonClaimLocks": [
+    "navigation_is_not_validation",
+    "documentation_is_not_correctness",
+    "route_map_is_not_runtime_proof",
+    "context_reconstruction_is_not_code_quality",
+    "threat_signal_is_not_malware_proof",
+    "ip_indicator_is_not_attacker_identity",
+    "validation_remains_required",
+    "human_authority_remains_required"
+  ],
+  "readOrder": [
+    "README.md",
+    "README_90_SECONDS.md",
+    "docs/README.md",
+    "docs/rcc-nexus.md",
+    "docs/rehydration-protocol.md",
+    "docs/failure-modes.md",
+    "rcc/README.md",
+    "rcc/nexus/README.md"
+  ],
+  "routes": [
+    {
+      "surface": "human_overview",
+      "paths": ["README.md", "README_90_SECONDS.md"],
+      "validation": ["npm run validate", "npm run validate:rcc"]
+    },
+    {
+      "surface": "edge_extension",
+      "paths": ["apps/edge-extension"],
+      "validation": ["npm run validate"]
+    },
+    {
+      "surface": "chrome_extension",
+      "paths": ["apps/chrome-extension"],
+      "validation": ["npm run validate"]
+    },
+    {
+      "surface": "legacy_extension",
+      "paths": ["extension"],
+      "validation": ["npm run validate"]
+    },
+    {
+      "surface": "safety_model",
+      "paths": ["docs/security-model.md", "sandbox/threat-review", "docs/failure-modes.md"],
+      "validation": ["npm run validate", "npm run validate:rcc"]
+    },
+    {
+      "surface": "rcc_nexus",
+      "paths": ["docs/rcc-nexus.md", "rcc/README.md", "rcc/nexus/README.md", "rcc/nexus/route_map.json"],
+      "validation": ["npm run validate:rcc"]
+    },
+    {
+      "surface": "rehydration",
+      "paths": ["docs/rehydration-protocol.md", "README_90_SECONDS.md"],
+      "validation": ["npm run validate:rcc"]
+    },
+    {
+      "surface": "packaging",
+      "paths": ["scripts", "dist"],
+      "validation": ["npm run package:edge", "npm run package:chrome"]
+    }
+  ]
+}

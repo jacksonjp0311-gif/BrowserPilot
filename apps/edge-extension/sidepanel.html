@@ -197,6 +197,22 @@
         rgba(255,255,255,0.07);
     }
 
+    .btnThreat {
+      border-color: rgba(254,78,78,0.48);
+      background:
+        linear-gradient(90deg, rgba(254,78,78,0.22), rgba(255,149,0,0.16), rgba(18,224,255,0.08)),
+        rgba(255,255,255,0.04);
+      color: rgba(255,244,238,0.98);
+      box-shadow: 0 0 0 1px rgba(254,78,78,0.10), 0 0 24px rgba(254,78,78,0.16);
+    }
+
+    .btnThreat:hover {
+      border-color: rgba(255,149,0,0.62);
+      background:
+        linear-gradient(90deg, rgba(254,78,78,0.30), rgba(255,149,0,0.20), rgba(18,224,255,0.12)),
+        rgba(255,255,255,0.07);
+    }
+
     .btnStop {
       border-color: rgba(254, 78, 78, 0.30);
       background: rgba(254, 78, 78, 0.12);
@@ -465,13 +481,14 @@
       </div>
 
       <div class="row2">
-        <button id="captureBtn">Capture page</button>
+        <button id="threatScanBtn" class="btnThreat" title="Run a local DOM-first threat scan. No API call happens by default.">Threat Scan</button>
         <button id="actBtn" title="When ON, the agent can emit AGNT_EXEC commands to operate the current tab.">Jarvis: ON</button>
         <button id="cyberSnapshotBtn" class="btnCyber" title="Select part of the current page and insert extracted text into chat.">Cyber Snapshot</button>
         <button id="watchRegionBtn" title="Watch the last Cyber Snapshot region for text changes.">Watch region</button>
-        <button id="openAgntBtn" class="btnAccent">Open AGNT Chat</button>
         <button id="contextRadarBtn" class="btnRadar" title="Show glowing context target boxes for readable page items.">Context Radar</button>
+        <button id="scanReportBtn" class="btnAccent" title="Insert the latest Threat Scan report into the composer for review.">Scan Report</button>
         <button id="syncIndicatorBtn" class="btnComms" disabled>Backend idle</button>
+        <button id="openAgntBtn" class="btnAccent" title="Side-panel mode keeps AGNT chat closed unless opened manually.">Open AGNT Chat</button>
       </div>
 
       <div class="hint" id="contextHint">Click the floating “AGNT” button on any page to capture URL + selection. “Capture page” also grabs bounded page text. Toggle Control: OFF / Jarvis / Edge Copilot (SymTorch-gated).</div>
@@ -487,6 +504,10 @@
       <div class="row">
         <button id="suggestBtn" title="Analyze BrowserPilot telemetry and save it into AGNT's persistent graph.">Analyze telemetry</button>
         <button id="sendBtn" class="btnAccent">Send</button>
+      </div>
+      <div class="row">
+        <button id="extractIpBtn" title="Extract IPv4/IPv6 indicators from current text, Cyber Snapshot, selected region, and latest threat report.">Extract IP Address</button>
+        <div class="hint" style="text-align:right">Local parse only. No scans or reports.</div>
       </div>
       <div class="row" id="stopRow">
         <button id="stopBtn" class="btnStop">Stop</button>

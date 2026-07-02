@@ -53,6 +53,8 @@ for (const [label, extensionDir] of targets) {
   // --- Runtime sanity checks (lightweight) ---
   // Structural checks can pass while the panel is runtime-broken (missing helpers).
   const sidepanelText = fs.readFileSync(path.join(extensionDir, 'sidepanel.js'), 'utf8');
+  const sidepanelHtml = fs.readFileSync(path.join(extensionDir, 'sidepanel.html'), 'utf8');
+  const contentText = fs.readFileSync(path.join(extensionDir, 'contentScript.js'), 'utf8');
   const requiredSnippets = [
     'function setError',
     'function pushMsg',
@@ -60,9 +62,25 @@ for (const [label, extensionDir] of targets) {
     'async function bg',
     'function rebuildFromChatLog'
   ];
+  if (label === 'edge' || label === 'chrome') {
+    requiredSnippets.push('async function startThreatScan', 'function extractIpIndicatorsFromText');
+  }
   const missing = requiredSnippets.filter((s) => !sidepanelText.includes(s));
   if (missing.length) {
     throw new Error('[' + label + '] sidepanel.js is missing helper(s): ' + missing.join(', '));
+  }
+
+  if ((label === 'edge' || label === 'chrome') && !sidepanelHtml.includes('id="threatScanBtn"') && !sidepanelHtml.includes('Threat Scan')) {
+    throw new Error(`[${label}] sidepanel.html must expose Threat Scan`);
+  }
+  if ((label === 'edge' || label === 'chrome') && !sidepanelHtml.includes('id="extractIpBtn"')) {
+    throw new Error(`[${label}] sidepanel.html must expose Extract IP Address`);
+  }
+  if ((label === 'edge' || label === 'chrome') && !contentText.includes('BROWSERPILOT_START_THREAT_SCAN')) {
+    throw new Error(`[${label}] contentScript.js must handle BROWSERPILOT_START_THREAT_SCAN`);
+  }
+  if ((label === 'edge' || label === 'chrome') && !backgroundText.includes('BROWSERPILOT_START_THREAT_SCAN')) {
+    throw new Error(`[${label}] background.js must route BROWSERPILOT_START_THREAT_SCAN`);
   }
 
   if (manifest.manifest_version !== 3) {

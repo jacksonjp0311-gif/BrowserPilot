@@ -90,6 +90,61 @@ test-pages/context-radar-qa.html
 
 ---
 
+## Threat Scan / Threat Radar
+
+Threat Scan is a local-first DOM threat scan for the active tab. It replaces the visible Capture Page control as the primary safety action.
+
+Current capability:
+- Local DOM-first scan with no API call by default
+- Red centered Threat HUD only when medium/high local risk signals are found
+- Detects hidden prompt-like text, suspicious overlays, link mismatch, suspicious iframes, credential forms, inline handlers, and embedded IP indicators
+- Scanner does not execute untrusted page JavaScript
+- Scanner does not fetch suspicious URLs
+- Scanner does not prove malware
+- Scanner does not auto-send raw page data to AGNT
+
+Threat Lock gates risky agent actions when a high-risk report is active. Safe observation commands such as wait, screenshot, DOM audit, Threat Scan, Context Radar, Cyber Snapshot, Extract IP, and export/report actions remain allowed.
+
+## Threat Review Sandbox
+
+Threat Review is human-approved. BrowserPilot inserts a redacted review prompt into the composer only after the user clicks Send to Chat Sandbox.
+
+The repo includes a static runner:
+
+```powershell
+python sandbox/threat-review/threat_review_runner.py .\approved-threat-review-request.json
+```
+
+Security model:
+- Container/disposable worker isolation is preferred
+- Python VENV is dependency/runtime containment only, not a full security boundary
+- Static analysis only
+- No suspicious URL fetching by default
+- No page JavaScript execution
+- Raw evidence is not retained by default
+- Final report includes a wipe certificate based on directory deletion verification
+- Rule candidates are suggestions only and are not installed automatically
+
+## Extract IP Address
+
+The small bottom Extract IP Address button parses IPv4/IPv6 indicators from composer text, Cyber Snapshot text, page context, the latest Threat Scan report, and the latest Context Radar target.
+
+It supports multiple IPs, deduplicates indicators, and classifies public/private/reserved/documentation/loopback/link-local/multicast addresses. This is local-only parsing. It does not ping, scan, enrich, attack, report, or attribute.
+
+IP addresses are network indicators only. They are not proof of attacker identity and may belong to CDNs, cloud providers, shared hosts, proxies, VPNs, or compromised infrastructure.
+
+## Network IOC Capture / Authority Report Package
+
+Network IOC Capture is optional and gated. BrowserPilot v0.2 generates local IOC/evidence packages only after a user-reviewed suspicious or likely threat flow.
+
+The Authority Report Package can include domains, URLs, extracted IP indicators, observed request IPs only if a future optional permission is enabled, redirect chains and timestamps when available, and the sandbox wipe certificate.
+
+BrowserPilot does not auto-submit reports, publicly post IP addresses, accuse an IP owner of being an attacker, attack, scan, retaliate, or dox.
+
+Allowed actions are local/export-oriented: create authority report, export IOC bundle, copy an abuse report template, or manually open an official reporting page after the user clicks.
+
+---
+
 ## New AGNT user checklist ✅ (distribution confidence)
 
 Use this when someone installs BrowserPilot on a fresh machine.

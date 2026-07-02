@@ -126,6 +126,15 @@ function commandRiskScore(cmd = {}, pageContext = null) {
     }
   }
 
+  const threatLevel = String(pageContext?.threatScan?.risk?.level || pageContext?.threatScan?.riskLevel || '').toLowerCase();
+  if (threatLevel === 'high' && !['wait', 'screenshot', 'domAudit'].includes(kind)) {
+    risk = Math.max(risk, 0.9);
+    reason = reason + '+active_threat_scan_high';
+  } else if (threatLevel === 'medium' && ['click', 'type', 'navigate', 'openTab', 'attachImage'].includes(kind)) {
+    risk = Math.max(risk, 0.7);
+    reason = reason + '+active_threat_scan_medium';
+  }
+
   return { risk, reason };
 }
 
@@ -898,6 +907,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await recordTelemetry(res?.ok ? 'context_radar_started' : 'context_radar_failed', {
           tabId,
           ok: Boolean(res?.ok),
+          error: res?.ok ? null : res?.error
+        });
+        sendResponse({ ...(res || {}), tabId });
+        return;
+      }
+
+      if (msg?.type === 'BROWSERPILOT_START_THREAT_SCAN') {
+        const tabId = msg.tabId ?? await getActiveTabId();
+        if (typeof tabId !== 'number') throw new Error('No active tab');
+        await recordTelemetry('threat_scan_started', { tabId });
+        const res = await chrome.tabs.sendMessage(tabId, { type: 'BROWSERPILOT_START_THREAT_SCAN' });
+        await recordTelemetry(res?.ok ? 'threat_scan_completed' : 'threat_scan_failed', {
+          tabId,
+          ok: Boolean(res?.ok),
+          risk: res?.report?.risk || null,
+          counts: res?.report?.counts || null,
           error: res?.ok ? null : res?.error
         });
         sendResponse({ ...(res || {}), tabId });

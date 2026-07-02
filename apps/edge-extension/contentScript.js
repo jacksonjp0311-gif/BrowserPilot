@@ -923,6 +923,303 @@
     document.addEventListener('keydown', onKey, true);
   }
 
+  function normalizeIpAddress(value) {
+    const raw = String(value || '').trim().replace(/^\[/, '').replace(/\](:\d+)?$/, '').replace(/[),.;]+$/, '').toLowerCase();
+    if (/^\d{1,3}(\.\d{1,3}){3}:\d{1,5}$/.test(raw)) return raw.replace(/:\d{1,5}$/, '');
+    return raw;
+  }
+
+  function classifyIpAddress(ip) {
+    const normalized = normalizeIpAddress(ip);
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(normalized)) {
+      const p = normalized.split('.').map(Number);
+      if (p.some((n) => n < 0 || n > 255)) return 'unknown';
+      if (p[0] === 10 || (p[0] === 172 && p[1] >= 16 && p[1] <= 31) || (p[0] === 192 && p[1] === 168)) return 'private';
+      if (p[0] === 127) return 'loopback';
+      if (p[0] === 169 && p[1] === 254) return 'link_local';
+      if (p[0] >= 224 && p[0] <= 239) return 'multicast';
+      if (p[0] === 0 || (p[0] === 100 && p[1] >= 64 && p[1] <= 127)) return 'reserved';
+      if ((p[0] === 192 && p[1] === 0 && p[2] === 2) || (p[0] === 198 && p[1] === 51 && p[2] === 100) || (p[0] === 203 && p[1] === 0 && p[2] === 113)) return 'documentation';
+      return 'public';
+    }
+    if (normalized === '::1') return 'loopback';
+    if (/^fe80:/i.test(normalized)) return 'link_local';
+    if (/^f[cd][0-9a-f]{2}:/i.test(normalized)) return 'private';
+    if (/^ff/i.test(normalized)) return 'multicast';
+    if (/^2001:db8:/i.test(normalized)) return 'documentation';
+    return normalized.includes(':') ? 'public' : 'unknown';
+  }
+
+  function extractIpIndicatorsFromText(text, sourceField = 'text') {
+    const raw = String(text || '');
+    const found = [];
+    const patterns = [/(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?![\d.])/g, /(?:\[[0-9a-f:]{2,}\](?::\d{1,5})?)|(?<![\w:])(?:[0-9a-f]{1,4}:){2,}[0-9a-f]{0,4}(?![\w:])/gi];
+    for (const re of patterns) {
+      for (const match of raw.matchAll(re)) {
+        const value = normalizeIpAddress(match[0]);
+        if (value.includes('.')) {
+          const parts = value.split('.').map(Number);
+          if (parts.length !== 4 || parts.some((part) => Number.isNaN(part) || part < 0 || part > 255)) continue;
+        }
+        const idx = match.index || 0;
+        found.push({
+          value,
+          version: value.includes(':') ? 'ipv6' : 'ipv4',
+          classification: classifyIpAddress(value),
+          sourceField,
+          redactedContext: raw.slice(Math.max(0, idx - 70), Math.min(raw.length, idx + String(match[0]).length + 70)).replace(/\s+/g, ' ').trim(),
+          confidence: 'extracted_from_text'
+        });
+      }
+    }
+    const seen = new Set();
+    return found.filter((item) => {
+      const key = `${item.version}:${item.value}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function redactThreatText(text) {
+    return String(text || '')
+      .replace(/(bearer\s+)[a-z0-9._~+/=-]+/ig, '$1[redacted]')
+      .replace(/(api[_ -]?key|token|password|private[_ -]?key|seed phrase)(.{0,40})/ig, '$1 [redacted]')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 420);
+  }
+
+  function rectForElement(el) {
+    const r = el?.getBoundingClientRect?.();
+    if (!r) return null;
+    return { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height), viewportWidth: Math.round(innerWidth), viewportHeight: Math.round(innerHeight), scrollX: Math.round(scrollX), scrollY: Math.round(scrollY) };
+  }
+
+  function selectorHintsForElement(el) {
+    return {
+      cssPath: cssPathForElement(el),
+      tag: (el?.tagName || '').toLowerCase(),
+      role: el?.getAttribute?.('role') || '',
+      ariaLabel: el?.getAttribute?.('aria-label') || '',
+      id: el?.id || '',
+      nearestHeading: nearestHeadingText(el)
+    };
+  }
+
+  function addThreatFinding(findings, category, severity, reason, el, preview, evidence = {}) {
+    findings.push({
+      id: `finding-${findings.length + 1}`,
+      category,
+      severity,
+      reason,
+      rect: rectForElement(el),
+      selectorHints: selectorHintsForElement(el),
+      redactedPreview: redactThreatText(preview),
+      evidence: {
+        visibleToUser: !evidence.hiddenFromUser,
+        hiddenFromUser: Boolean(evidence.hiddenFromUser),
+        pointerInteractive: Boolean(evidence.pointerInteractive),
+        zIndex: evidence.zIndex ?? null,
+        opacity: evidence.opacity ?? null
+      },
+      evidenceHash: hashString(`${category}:${reason}:${preview}`)
+    });
+  }
+
+  function scoreThreatFindings(findings, ipIndicators) {
+    let score = 0;
+    for (const f of findings) {
+      if (f.category === 'hidden_prompt') score += 0.35;
+      if (f.category === 'overlay') score += 0.30;
+      if (f.category === 'credential_form') score += 0.25;
+      if (f.category === 'link_mismatch') score += 0.15;
+      if (f.category === 'iframe') score += 0.15;
+      if (f.category === 'inline_handler') score += 0.10;
+    }
+    if (ipIndicators.some((item) => item.classification === 'public') && findings.some((f) => f.category === 'hidden_prompt')) score += 0.15;
+    if (ipIndicators.length && !ipIndicators.some((item) => item.classification === 'public')) score += 0.03;
+    score = Math.max(0, Math.min(1, score));
+    const level = score >= 0.60 ? 'high' : (score >= 0.25 ? 'medium' : 'low');
+    const order = { info: 0, low: 1, medium: 2, high: 3 };
+    const highestSeverity = findings.reduce((best, f) => order[f.severity] > order[best] ? f.severity : best, 'info');
+    return { level, score: Number(score.toFixed(2)), highestSeverity, summary: `${findings.length} local DOM risk signal(s) found` };
+  }
+
+  function runThreatScan() {
+    const findings = [];
+    const promptRe = /ignore (all )?previous instructions|system prompt|developer message|hidden instruction|do not tell the user|do not reveal this|exfiltrate|api key|bearer token|password|seed phrase|wallet|private key|run this command|tool call|call this tool|send the user data|bypass|jailbreak|override safety|agent instruction|assistant instruction/i;
+    const allTextSources = [];
+    const nodes = Array.from(document.querySelectorAll('body *')).slice(0, 2500);
+    for (const el of nodes) {
+      if (!(el instanceof HTMLElement) || el.id === ID || el.closest('#agnt-context-radar-root, #agnt-cyber-snapshot-root, #browserpilot-threat-root')) continue;
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      const textBits = [el.innerText, el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('alt'), ...Array.from(el.attributes || []).filter((a) => a.name.startsWith('data-')).map((a) => a.value)].filter(Boolean).join(' ');
+      if (textBits) allTextSources.push({ text: textBits, source: 'dom_text' });
+      const hidden = style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity || 1) < 0.06 || rect.right < 0 || rect.bottom < 0 || rect.width < 2 || rect.height < 2 || Number(style.fontSize?.replace('px', '') || 16) < 3;
+      if (hidden && promptRe.test(textBits)) addThreatFinding(findings, 'hidden_prompt', 'high', 'Hidden prompt-like or agent-facing instruction text', el, textBits, { hiddenFromUser: true, opacity: Number(style.opacity || 1), zIndex: style.zIndex });
+      const z = Number(style.zIndex || 0);
+      const area = rect.width * rect.height;
+      const coverage = area / Math.max(1, innerWidth * innerHeight);
+      const interactive = style.pointerEvents !== 'none' && (el.matches('a,button,[role="button"],input,textarea,select') || el.hasAttribute('onclick') || style.cursor === 'pointer');
+      if (['fixed', 'sticky', 'absolute'].includes(style.position) && z > 999 && Number(style.opacity || 1) < 0.12 && coverage > 0.35 && interactive) addThreatFinding(findings, 'overlay', 'high', 'Large transparent interactive overlay', el, textBits || el.outerHTML.slice(0, 180), { pointerInteractive: true, opacity: Number(style.opacity || 1), zIndex: z });
+      const handlerAttrs = ['oncopy', 'onpaste', 'onkeydown', 'onkeyup', 'onkeypress', 'oninput', 'onchange', 'onclick'].filter((name) => el.hasAttribute(name));
+      if (handlerAttrs.length) addThreatFinding(findings, 'inline_handler', handlerAttrs.some((h) => /key|copy|paste/.test(h)) ? 'medium' : 'low', `Inline event handler(s): ${handlerAttrs.join(', ')}`, el, textBits || el.outerHTML.slice(0, 220), { opacity: Number(style.opacity || 1), zIndex: z });
+    }
+
+    for (const anchor of Array.from(document.querySelectorAll('a[href]')).slice(0, 600)) {
+      const text = String(anchor.innerText || anchor.textContent || '').trim();
+      const href = anchor.getAttribute('href') || '';
+      allTextSources.push({ text: href, source: 'link_href' });
+      let url; try { url = new URL(href, location.href); } catch { continue; }
+      const domainText = text.match(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/i)?.[0];
+      if (domainText && domainText.toLowerCase() !== url.hostname.toLowerCase()) addThreatFinding(findings, 'link_mismatch', 'medium', `Visible domain differs from href host (${domainText} -> ${url.hostname})`, anchor, `${text} ${href}`);
+      if (url.protocol === 'javascript:') addThreatFinding(findings, 'link_mismatch', 'high', 'Anchor uses javascript: URL', anchor, `${text} ${href}`);
+      if (anchor.target === '_blank' && !/\bnoopener\b|\bnoreferrer\b/i.test(anchor.rel || '')) addThreatFinding(findings, 'link_mismatch', 'low', 'New-tab link lacks noopener/noreferrer', anchor, `${text} ${href}`);
+      if (/[?&](token|auth|redirect|callback|next|url)=/i.test(url.search)) addThreatFinding(findings, 'link_mismatch', 'medium', 'Link contains sensitive redirect/auth-like query parameter', anchor, `${text} ${href}`);
+    }
+
+    for (const frame of Array.from(document.querySelectorAll('iframe')).slice(0, 120)) {
+      const src = frame.getAttribute('src') || '';
+      allTextSources.push({ text: src, source: 'iframe_src' });
+      let thirdParty = false; try { thirdParty = new URL(src, location.href).origin !== location.origin; } catch {}
+      const style = getComputedStyle(frame);
+      const rect = frame.getBoundingClientRect();
+      const hidden = Number(style.opacity || 1) < 0.12 || rect.width < 20 || rect.height < 20 || style.visibility === 'hidden';
+      if (thirdParty || hidden) addThreatFinding(findings, 'iframe', thirdParty ? 'medium' : 'low', `${thirdParty ? 'Third-party' : 'Hidden/tiny'} iframe; cross-origin DOM may be unreadable`, frame, src, { hiddenFromUser: hidden, opacity: Number(style.opacity || 1), zIndex: style.zIndex });
+    }
+
+    for (const form of Array.from(document.querySelectorAll('form')).slice(0, 120)) {
+      const formText = String(form.innerText || '') + ' ' + String(form.getAttribute('action') || '');
+      const hasCredential = Boolean(form.querySelector('input[type="password"], input[name*="token" i], input[name*="key" i]')) || /seed phrase|wallet|api key|password|payment|card/i.test(formText);
+      const action = form.getAttribute('action') || '';
+      allTextSources.push({ text: action, source: 'form_action' });
+      let external = false; try { external = action && new URL(action, location.href).origin !== location.origin; } catch {}
+      if (hasCredential || external) addThreatFinding(findings, 'credential_form', hasCredential ? 'high' : 'medium', `${hasCredential ? 'Credential/payment-like form' : 'External form action'}${external ? ' to external origin' : ''}`, form, formText);
+    }
+
+    for (const script of Array.from(document.querySelectorAll('script[src]')).slice(0, 240)) {
+      allTextSources.push({ text: script.getAttribute('src') || '', source: 'script_src' });
+    }
+    for (const el of Array.from(document.querySelectorAll('noscript,template')).slice(0, 120)) {
+      const text = String(el.textContent || '');
+      allTextSources.push({ text, source: el.tagName.toLowerCase() });
+      if (promptRe.test(text)) addThreatFinding(findings, 'hidden_prompt', 'medium', `${el.tagName.toLowerCase()} contains prompt-like text`, el, text, { hiddenFromUser: true });
+    }
+    try {
+      const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_COMMENT);
+      let count = 0;
+      while (walker.nextNode() && count < 240) {
+        count += 1;
+        const text = String(walker.currentNode.nodeValue || '');
+        allTextSources.push({ text, source: 'html_comment' });
+        if (promptRe.test(text)) addThreatFinding(findings, 'hidden_prompt', 'medium', 'HTML comment contains prompt-like text', walker.currentNode.parentElement || document.body, text, { hiddenFromUser: true });
+      }
+    } catch {}
+
+    const ipIndicators = allTextSources.flatMap((src) => extractIpIndicatorsFromText(src.text, src.source));
+    const uniqueIps = [];
+    const seenIps = new Set();
+    for (const ip of ipIndicators) {
+      const key = `${ip.version}:${ip.value}`;
+      if (!seenIps.has(key)) { seenIps.add(key); uniqueIps.push(ip); }
+    }
+    const risk = scoreThreatFindings(findings, uniqueIps);
+    const counts = {
+      findings: findings.length,
+      hiddenPrompts: findings.filter((f) => f.category === 'hidden_prompt').length,
+      overlays: findings.filter((f) => f.category === 'overlay').length,
+      links: findings.filter((f) => f.category === 'link_mismatch').length,
+      iframes: findings.filter((f) => f.category === 'iframe').length,
+      forms: findings.filter((f) => f.category === 'credential_form').length,
+      handlers: findings.filter((f) => f.category === 'inline_handler').length,
+      ipIndicators: uniqueIps.length
+    };
+    return {
+      schemaVersion: 'browserpilot.threatScan.v1',
+      reportId: `thr-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      scannedAt: new Date().toISOString(),
+      page: { url: location.href, origin: location.origin, title: document.title, readyState: document.readyState },
+      risk,
+      counts,
+      findings,
+      ipIndicators: uniqueIps,
+      recommendedAction: risk.level === 'high' ? 'threat_lock' : (risk.level === 'medium' ? 'review' : 'continue'),
+      privacy: { localOnly: true, rawTextStored: false, redactedByDefault: true, apiReviewRequiresHumanApproval: true },
+      limitations: ['DOM-first scan only', 'Does not prove malware', 'Cannot inspect all runtime JS listeners', 'Cannot read cross-origin iframe DOM', 'Does not execute untrusted scripts', 'IP addresses are infrastructure indicators, not attribution']
+    };
+  }
+
+  function closeThreatHud() {
+    document.getElementById('browserpilot-threat-root')?.remove();
+  }
+
+  function renderThreatFindingBoxes(report) {
+    return (report.findings || []).filter((f) => f.rect).slice(0, 16).map((f) => `<div class="threat-box ${f.category}" style="left:${f.rect.x}px;top:${f.rect.y}px;width:${Math.max(28, f.rect.width)}px;height:${Math.max(18, f.rect.height)}px"><span>${f.category}</span></div>`).join('');
+  }
+
+  function renderThreatFoundHud(report) {
+    closeThreatHud();
+    const root = document.createElement('div');
+    root.id = 'browserpilot-threat-root';
+    root.innerHTML = `
+      <div class="threat-dim"></div>
+      ${renderThreatFindingBoxes(report)}
+      <section class="threat-hud">
+        <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+        <div class="scanline"></div>
+        <h2>THREAT SIGNAL DETECTED</h2>
+        <div class="risk ${report.risk.level}">Risk: ${report.risk.level.toUpperCase()} | Score: ${report.risk.score}</div>
+        <p>${report.risk.summary}</p>
+        <p>Findings: ${report.counts.findings} | IP indicators: ${report.counts.ipIndicators}</p>
+        <p class="small">Agent actions paused. Network indicators are not proof of attacker identity.</p>
+        <div class="actions">
+          <button data-action="ack">Acknowledge & Continue</button>
+          <button data-action="sandbox">Send to Chat Sandbox</button>
+          <button data-action="block">Block Agent Actions</button>
+          <button data-action="ips">Extract IP Address</button>
+          <button data-action="dismiss">Dismiss</button>
+        </div>
+      </section>`;
+    const css = document.createElement('style');
+    css.textContent = `
+      #browserpilot-threat-root{position:fixed;inset:0;z-index:2147483646;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;pointer-events:auto;color:#fff}
+      #browserpilot-threat-root .threat-dim{position:absolute;inset:0;background:rgba(3,8,18,.28)}
+      #browserpilot-threat-root .threat-hud{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(520px,calc(100vw - 32px));border:1px solid rgba(254,78,78,.72);border-radius:18px;background:linear-gradient(135deg,rgba(18,8,14,.90),rgba(8,14,22,.88));box-shadow:0 0 0 1px rgba(255,149,0,.18) inset,0 0 45px rgba(254,78,78,.36);padding:20px;overflow:hidden}
+      #browserpilot-threat-root .threat-hud:before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:18px 18px;opacity:.24;pointer-events:none}
+      #browserpilot-threat-root .scanline{position:absolute;left:-30%;top:0;width:40%;height:100%;background:linear-gradient(90deg,transparent,rgba(18,224,255,.16),transparent);animation:bpThreatSweep 2.6s linear infinite}
+      @keyframes bpThreatSweep{from{transform:translateX(0)}to{transform:translateX(360%)}}
+      #browserpilot-threat-root h2{position:relative;margin:0 0 10px;color:#ffdddd;letter-spacing:.12em;font-size:17px}
+      #browserpilot-threat-root p,#browserpilot-threat-root .risk{position:relative;margin:8px 0;color:rgba(255,255,255,.86)}
+      #browserpilot-threat-root .risk{display:inline-block;border:1px solid rgba(255,149,0,.5);border-radius:999px;padding:6px 10px;background:rgba(254,78,78,.14)}
+      #browserpilot-threat-root .small{font-size:12px;color:rgba(255,216,200,.78)}
+      #browserpilot-threat-root .actions{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+      #browserpilot-threat-root button{border:1px solid rgba(255,255,255,.14);border-radius:10px;background:rgba(255,255,255,.07);color:#fff;padding:9px;cursor:pointer}
+      #browserpilot-threat-root button:hover{border-color:rgba(18,224,255,.5);background:rgba(18,224,255,.12)}
+      #browserpilot-threat-root .corner{position:absolute;width:24px;height:24px;border-color:#ff5b5b;pointer-events:none}.tl{left:10px;top:10px;border-left:2px solid;border-top:2px solid}.tr{right:10px;top:10px;border-right:2px solid;border-top:2px solid}.bl{left:10px;bottom:10px;border-left:2px solid;border-bottom:2px solid}.br{right:10px;bottom:10px;border-right:2px solid;border-bottom:2px solid}
+      #browserpilot-threat-root .threat-box{position:fixed;border:1px solid rgba(254,78,78,.75);background:rgba(254,78,78,.08);box-shadow:0 0 20px rgba(254,78,78,.25);pointer-events:none;border-radius:6px}.threat-box.hidden_prompt{border-color:rgba(209,61,229,.85)}.threat-box span{position:absolute;left:4px;top:-20px;background:rgba(10,8,14,.92);border:1px solid rgba(254,78,78,.45);border-radius:5px;padding:2px 5px;font-size:10px;color:#ffdede}
+    `;
+    root.appendChild(css);
+    root.addEventListener('click', (e) => {
+      const action = e.target?.dataset?.action;
+      if (!action) return;
+      if (action === 'ack') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_THREAT_HUD_ACKNOWLEDGED', report }).catch(() => {});
+      if (action === 'sandbox') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_THREAT_HUD_SEND_TO_SANDBOX', report }).catch(() => {});
+      if (action === 'block') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_THREAT_HUD_BLOCK_ACTIONS', report }).catch(() => {});
+      if (action === 'ips') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_EXTRACT_IPS_FROM_THREAT_REPORT', report }).catch(() => {});
+      if (action === 'dismiss') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_THREAT_HUD_DISMISSED', report }).catch(() => {});
+      closeThreatHud();
+    });
+    document.documentElement.appendChild(root);
+  }
+
+  function startThreatScanOverlay() {
+    const report = runThreatScan();
+    if (report.risk.level === 'medium' || report.risk.level === 'high') renderThreatFoundHud(report);
+    return report;
+  }
+
   async function openSidePanelWithContext() {
     const context = captureContext();
     const res = await chrome.runtime.sendMessage({ type: 'AGNT_OPEN_SIDEPANEL' });
@@ -973,6 +1270,12 @@
         if (msg?.type === 'BROWSERPILOT_START_CONTEXT_RADAR') {
           await startContextRadarOverlay();
           sendResponse({ ok: true, started: true });
+          return;
+        }
+
+        if (msg?.type === 'BROWSERPILOT_START_THREAT_SCAN') {
+          const report = startThreatScanOverlay();
+          sendResponse({ ok: true, report });
           return;
         }
 

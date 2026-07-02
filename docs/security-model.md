@@ -35,6 +35,41 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 - It does not auto-send.
 - It does not click, type, submit, or execute `AGNT_EXEC`.
 
+## Threat Scan / Threat Radar
+
+- Threat Scan is user-initiated and local-first.
+- It performs a DOM-first static scan only.
+- It does not execute untrusted page JavaScript.
+- It does not fetch suspicious URLs.
+- It does not auto-send raw page data to AGNT.
+- Medium/high findings show a centered red HUD.
+- Threat Lock can block risky agent commands while preserving safe observation commands.
+- Findings are risk signals, not proof of malware.
+
+## Extract IP Address
+
+- IP extraction is local parsing only.
+- It supports IPv4, IPv6, multiple indicators, deduplication, and basic public/private/reserved classification.
+- It does not ping, port scan, DNS enrich, attack, report, or attribute.
+- IP addresses are infrastructure indicators, not proof of attacker identity.
+
+## Threat Review Sandbox
+
+- Threat Review requires explicit human approval.
+- BrowserPilot inserts a redacted review prompt into the composer; it does not auto-send by default.
+- Container/disposable isolation is preferred.
+- Python VENV fallback is not a security boundary.
+- Static review must not fetch suspicious URLs or execute page code.
+- Raw evidence is not retained by default.
+- Wipe certificates verify directory absence only; they are not forensic secure erase.
+
+## Authority Reports
+
+- BrowserPilot does not auto-submit reports.
+- BrowserPilot does not publicly post IP addresses.
+- BrowserPilot does not provide attack, scan, retaliation, or doxxing actions.
+- Authority packages are local/exportable evidence bundles for responsible disclosure.
+
 ## Modes (and what they mean)
 
 BrowserPilot runs in one of three control modes:

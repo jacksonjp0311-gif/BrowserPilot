@@ -234,6 +234,7 @@
 
   let cyberRegionWatchTimer = null;
   let cyberRegionWatchState = null;
+  const CONTEXT_RADAR_MEMORY_KEY = 'browserpilot_context_radar_memory_v1';
 
   function stopCyberRegionWatch() {
     if (cyberRegionWatchTimer) clearInterval(cyberRegionWatchTimer);
@@ -572,6 +573,68 @@
     return base;
   }
 
+  async function getContextRadarMemory() {
+    try {
+      const data = await chrome.storage.local.get(CONTEXT_RADAR_MEMORY_KEY);
+      return data?.[CONTEXT_RADAR_MEMORY_KEY] || { preferredLabels: {}, ignoredLabels: {}, actions: [] };
+    } catch {
+      return { preferredLabels: {}, ignoredLabels: {}, actions: [] };
+    }
+  }
+
+  async function recordContextRadarAction(label, action) {
+    const memory = await getContextRadarMemory();
+    const bucket = action === 'ignoreSimilar' ? 'ignoredLabels' : 'preferredLabels';
+    memory[bucket] = memory[bucket] || {};
+    memory[bucket][label] = Number(memory[bucket][label] || 0) + 1;
+    memory.actions = Array.isArray(memory.actions) ? memory.actions.slice(-80) : [];
+    memory.actions.push({ label, action, at: new Date().toISOString(), url: location.href });
+    await chrome.storage.local.set({ [CONTEXT_RADAR_MEMORY_KEY]: memory }).catch(() => {});
+    return memory;
+  }
+
+  function cssPathForElement(el) {
+    const parts = [];
+    let node = el;
+    while (node && node.nodeType === Node.ELEMENT_NODE && parts.length < 5) {
+      const tag = (node.tagName || '').toLowerCase();
+      if (!tag || tag === 'html' || tag === 'body') break;
+      if (node.id) {
+        parts.unshift(`${tag}#${CSS.escape(node.id)}`);
+        break;
+      }
+      const role = node.getAttribute?.('role');
+      const testId = node.getAttribute?.('data-testid') || node.getAttribute?.('data-test');
+      if (testId) parts.unshift(`${tag}[data-testid="${CSS.escape(testId)}"]`);
+      else if (role) parts.unshift(`${tag}[role="${CSS.escape(role)}"]`);
+      else parts.unshift(tag);
+      node = node.parentElement;
+    }
+    return parts.join(' > ');
+  }
+
+  function nearestHeadingText(el) {
+    try {
+      let node = el;
+      for (let i = 0; node && i < 5; i++, node = node.parentElement) {
+        const heading = node.querySelector?.('h1,h2,h3,[role="heading"]');
+        const text = String(heading?.innerText || '').replace(/\s+/g, ' ').trim();
+        if (text) return text.slice(0, 180);
+      }
+      const headings = Array.from(document.querySelectorAll('h1,h2,h3,[role="heading"]'))
+        .map((heading) => {
+          const r = heading.getBoundingClientRect();
+          const target = el.getBoundingClientRect();
+          return { text: String(heading.innerText || '').replace(/\s+/g, ' ').trim(), distance: Math.abs(target.top - r.bottom) };
+        })
+        .filter((item) => item.text)
+        .sort((a, b) => a.distance - b.distance);
+      return (headings[0]?.text || '').slice(0, 180);
+    } catch {
+      return '';
+    }
+  }
+
   function detectContextTargets(limit = 18) {
     const selectors = [
       'article', '[role="article"]', 'main', 'section', 'form', 'table',
@@ -640,11 +703,21 @@
     return picked;
   }
 
-  function startContextRadarOverlay() {
+  async function startContextRadarOverlay() {
     const existing = document.getElementById('agnt-context-radar-root');
     if (existing) existing.remove();
 
-    const targets = detectContextTargets(18);
+    const memory = await getContextRadarMemory();
+    const ignoredLabels = memory.ignoredLabels || {};
+    const preferredLabels = memory.preferredLabels || {};
+    const targets = detectContextTargets(24)
+      .filter((target) => Number(ignoredLabels[target.label] || 0) < 3)
+      .map((target) => ({
+        ...target,
+        confidence: Math.min(0.99, target.confidence + Math.min(0.12, Number(preferredLabels[target.label] || 0) * 0.02))
+      }))
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 18);
     const root = document.createElement('div');
     root.id = 'agnt-context-radar-root';
     root.innerHTML = `
@@ -728,6 +801,29 @@
       #agnt-context-radar-root .radar-hud strong { color: #19ef83; letter-spacing: 0.08em; text-transform: uppercase; }
       #agnt-context-radar-root .radar-hud .preview { color: rgba(255,255,255,0.82); margin-top: 6px; }
       #agnt-context-radar-root .radar-hud .actions { color: rgba(18,224,255,0.78); margin-top: 8px; }
+      #agnt-context-radar-root .radar-actions {
+        position: absolute;
+        right: 6px;
+        bottom: 6px;
+        display: none;
+        gap: 4px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      #agnt-context-radar-root .radar-box:hover .radar-actions { display: flex; }
+      #agnt-context-radar-root .radar-action {
+        border: 1px solid rgba(25,239,131,0.38);
+        border-radius: 6px;
+        background: rgba(2, 14, 18, 0.86);
+        color: #dfffee;
+        font: 700 10px/1 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        padding: 5px 6px;
+        cursor: pointer;
+      }
+      #agnt-context-radar-root .radar-action:hover {
+        border-color: rgba(18,224,255,0.75);
+        color: #c9fbff;
+      }
     `;
     root.appendChild(css);
 
@@ -745,14 +841,21 @@
     }
 
     targets.forEach((target, idx) => {
-      const box = document.createElement('button');
-      box.type = 'button';
+      const box = document.createElement('div');
       box.className = 'radar-box';
+      box.setAttribute('role', 'button');
+      box.tabIndex = 0;
       box.style.left = target.rect.x + 'px';
       box.style.top = target.rect.y + 'px';
       box.style.width = target.rect.width + 'px';
       box.style.height = target.rect.height + 'px';
-      box.innerHTML = `<span class="radar-tag">${target.label} ${Math.round(target.confidence * 100)}%</span>`;
+      box.innerHTML = `<span class="radar-tag">${target.label} ${Math.round(target.confidence * 100)}%</span>
+        <span class="radar-actions">
+          <button class="radar-action" data-action="captureText">Capture</button>
+          <button class="radar-action" data-action="watch">Watch</button>
+          <button class="radar-action" data-action="useTarget">Target</button>
+          <button class="radar-action" data-action="ignoreSimilar">Ignore</button>
+        </span>`;
 
       box.addEventListener('mouseenter', () => {
         hud.hidden = false;
@@ -765,12 +868,23 @@
         ].join('');
       });
       box.addEventListener('mouseleave', () => { hud.hidden = true; });
-      box.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+      async function sendTarget(action) {
+        await recordContextRadarAction(target.label, action);
+        if (action === 'ignoreSimilar') {
+          root.querySelectorAll('.radar-box').forEach((candidate) => {
+            if (candidate.dataset.label === target.label) candidate.remove();
+          });
+          chrome.runtime.sendMessage({
+            type: 'BROWSERPILOT_CONTEXT_RADAR_CAPTURED',
+            action,
+            target: { label: target.label, page: { url: location.href, title: document.title }, text: '', textPreview: '', risk: 'read_only' }
+          }).catch(() => {});
+          return;
+        }
         const fullText = String(target.el.innerText || target.el.value || target.text || '').replace(/\s+/g, ' ').trim().slice(0, 12000);
         chrome.runtime.sendMessage({
           type: 'BROWSERPILOT_CONTEXT_RADAR_CAPTURED',
+          action,
           target: {
             id: `ctx_${idx + 1}`,
             label: target.label,
@@ -783,14 +897,24 @@
             capabilities: contextCapabilities(target.label),
             why: target.why,
             selectorHints: {
+              cssPath: cssPathForElement(target.el),
               tag: (target.el.tagName || '').toLowerCase(),
               role: target.el.getAttribute('role') || '',
+              ariaLabel: target.el.getAttribute('aria-label') || '',
               id: target.el.id || '',
-              textHash: hashString(fullText)
+              textHash: hashString(fullText),
+              nearestHeading: nearestHeadingText(target.el)
             }
           }
         }).catch(() => {});
         finish(false);
+      }
+      box.dataset.label = target.label;
+      box.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const action = e.target?.dataset?.action || 'captureText';
+        sendTarget(action).catch(() => {});
       });
       root.appendChild(box);
     });
@@ -815,7 +939,7 @@
   fab.addEventListener('click', () => {
     openSidePanelWithContext().catch((e) => {
       console.error('[BrowserPilot] open failed:', e);
-      alert('BrowserPilot: could not open side panel.\n\nOpen chrome://extensions → BrowserPilot for Chrome → Service Worker (Inspect) to see the error.\n\nError: ' + (e?.message || String(e)));
+      alert('BrowserPilot: could not open side panel.\n\nOpen chrome://extensions -> BrowserPilot -> Service Worker (Inspect) to see the error.\n\nError: ' + (e?.message || String(e)));
     });
   });
 
@@ -847,7 +971,7 @@
         }
 
         if (msg?.type === 'BROWSERPILOT_START_CONTEXT_RADAR') {
-          startContextRadarOverlay();
+          await startContextRadarOverlay();
           sendResponse({ ok: true, started: true });
           return;
         }

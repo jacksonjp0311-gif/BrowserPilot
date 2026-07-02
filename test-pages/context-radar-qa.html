@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BrowserPilot Context Radar QA</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #070910;
+      color: #edf8ff;
+    }
+    body {
+      margin: 0;
+      padding: 32px;
+      background:
+        radial-gradient(circle at 18% 8%, rgba(20, 204, 198, 0.18), transparent 30%),
+        linear-gradient(135deg, #070910, #121420 58%, #0b1117);
+    }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: grid;
+      gap: 20px;
+    }
+    section, article, form, table, pre, .panel {
+      border: 1px solid rgba(103, 235, 201, 0.24);
+      border-radius: 10px;
+      background: rgba(11, 16, 26, 0.78);
+      box-shadow: 0 14px 44px rgba(0, 0, 0, 0.32);
+    }
+    section, article, form, pre, .panel { padding: 20px; }
+    h1, h2, h3 { margin: 0 0 10px; }
+    p { color: #bcd1dc; line-height: 1.55; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+    }
+    button, input, textarea {
+      border: 1px solid rgba(79, 225, 194, 0.35);
+      border-radius: 8px;
+      background: #101722;
+      color: #edf8ff;
+      padding: 10px 12px;
+    }
+    button { cursor: pointer; background: linear-gradient(135deg, #073344, #143425); }
+    label { display: grid; gap: 6px; margin: 10px 0; color: #9fc0cb; }
+    table { width: 100%; border-collapse: collapse; overflow: hidden; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid rgba(103, 235, 201, 0.14); text-align: left; }
+    th { color: #67ebc9; }
+    code { color: #78f7ff; }
+    .status { display: flex; gap: 12px; flex-wrap: wrap; }
+    .pill { border: 1px solid rgba(103,235,201,.35); border-radius: 999px; padding: 8px 10px; color: #67ebc9; }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>Context Radar QA Surface</h1>
+      <p>This page gives BrowserPilot predictable visible targets for Radar, Cyber Snapshot, region watch, and composer insertion tests.</p>
+      <div class="status" aria-label="System status">
+        <span class="pill">AGNT bridge: online</span>
+        <span class="pill">Radar candidates: mixed</span>
+        <span class="pill">Risk: read only</span>
+      </div>
+    </section>
+
+    <div class="grid">
+      <article aria-label="Research brief">
+        <h2>Research Brief</h2>
+        <p>Browser-side agents become more useful when they can ground actions in visible page context, stable selectors, and user-approved regions.</p>
+        <p>The next step is durable context memory: evidence, action, verification, and a retained trace for similar future workflows.</p>
+      </article>
+
+      <form aria-label="Demo intake form">
+        <h2>Demo Intake Form</h2>
+        <label>Project name <input value="BrowserPilot Radar QA"></label>
+        <label>Goal <textarea rows="4">Capture this form as context without submitting it.</textarea></label>
+        <button type="button">Save Draft</button>
+      </form>
+    </div>
+
+    <section>
+      <h2>Workflow Metrics</h2>
+      <table aria-label="Workflow metrics table">
+        <thead><tr><th>Workflow</th><th>Status</th><th>Signal</th><th>Next Action</th></tr></thead>
+        <tbody>
+          <tr><td>Golden Trace</td><td>Ready</td><td>Stable selector</td><td>Save template</td></tr>
+          <tr><td>Diagnostics</td><td>Running</td><td>Timeout drift</td><td>Adjust waits</td></tr>
+          <tr><td>Region Watch</td><td>Idle</td><td>No change</td><td>Arm watcher</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <pre aria-label="Command snippet"><code>npm run validate
+npm run package:edge
+npm run package:chrome</code></pre>
+
+    <section class="panel" aria-label="Discussion thread">
+      <h2>Discussion Thread</h2>
+      <p><strong>James:</strong> Make the browser agent faster by putting local skills near the tab.</p>
+      <p><strong>Agent:</strong> Capture page evidence, classify likely targets, then insert reviewable context without auto-sending.</p>
+    </section>
+  </main>
+</body>
+</html>

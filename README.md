@@ -72,10 +72,21 @@ Context Radar adds a manual, DOM-first HUD that scans the visible page for likel
 Current capability:
 - Manual user-triggered scan from the side panel
 - Semi-transparent Browser Pilot HUD
-- Green target boxes with hover previews
-- Click-to-capture target text into the composer
+- Green target boxes with hover previews and action buttons
+- Capture target text into the composer
+- Watch a selected target region for visible text changes
+- Mark a target as the current working target
+- Ignore repeated low-value target types locally
+- Persistent local Radar preference memory
+- Semantic selector hints: CSS path, role, aria-label, nearby heading, and text hash
 - Structured target metadata for agent context
 - No auto-send and no autonomous page action
+
+Quick QA page:
+
+```text
+test-pages/context-radar-qa.html
+```
 
 ---
 

@@ -27,7 +27,10 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 
 - Context Radar is user-initiated.
 - It highlights likely visible page context items with a semi-transparent HUD.
-- It captures text only after the user clicks a highlighted target.
+- It captures text only after the user chooses a highlighted target action.
+- Available actions are Capture, Watch, Target, and Ignore.
+- Watch arms the existing visible-region watcher for a user-selected target.
+- Ignore stores a local preference to suppress repeated target types in future scans.
 - It inserts captured target text and metadata into the composer for human review.
 - It does not auto-send.
 - It does not click, type, submit, or execute `AGNT_EXEC`.

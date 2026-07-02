@@ -1,6 +1,6 @@
 {
   "name": "browser-pilot",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "private": true,
   "description": "BrowserPilot lets agents operate the browser tab the user is already using.",
   "scripts": {

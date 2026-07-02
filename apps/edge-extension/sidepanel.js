@@ -836,15 +836,26 @@ async function startContextRadar() {
   ].join('\n'));
 }
 
-function handleContextRadarCapture(msg) {
+async function handleContextRadarCapture(msg) {
   if (msg?.cancelled) {
     telemetry('context_radar_cancelled', pageContextStats()).catch(() => {});
     pushMsg('assistant', '[context radar] cancelled');
     return;
   }
 
+  const action = msg?.action || 'captureText';
   const target = msg?.target || {};
   const text = String(target.text || '').trim();
+
+  if (action === 'ignoreSimilar') {
+    telemetry('context_radar_target_ignored', {
+      ...pageContextStats(),
+      targetLabel: target.label || 'context'
+    }).catch(() => {});
+    pushMsg('assistant', `[context radar] Ignoring similar ${target.label || 'context'} targets for future scans.`);
+    return;
+  }
+
   lastRadarTarget = target;
   pageContext = {
     ...(pageContext || {}),
@@ -859,6 +870,7 @@ function handleContextRadarCapture(msg) {
 
   telemetry('context_radar_target_captured', {
     ...pageContextStats(),
+    action,
     targetLabel: target.label || 'context',
     confidence: target.confidence || null,
     textChars: text.length,
@@ -867,15 +879,17 @@ function handleContextRadarCapture(msg) {
   }).catch(() => {});
 
   const objectBlock = [
-    '[Context Radar Target]',
+    `[Context Radar Target: ${action}]`,
     JSON.stringify({
       id: target.id || null,
       label: target.label || 'context',
+      action,
       confidence: target.confidence || null,
       risk: target.risk || 'read_only',
       capabilities: target.capabilities || ['captureText'],
       why: target.why || [],
       rect: target.rect || null,
+      selectorHints: target.selectorHints || null,
       textPreview: target.textPreview || text.slice(0, 240)
     }, null, 2),
     '',
@@ -884,7 +898,7 @@ function handleContextRadarCapture(msg) {
   ].join('\n');
 
   pushMsg('assistant', [
-    '[context radar] Target captured.',
+    action === 'watch' ? '[context radar] Target captured and region watch armed.' : '[context radar] Target captured.',
     `Label: ${target.label || 'context'} | Confidence: ${Math.round(Number(target.confidence || 0) * 100)}%`,
     text ? text.slice(0, 1200) : '(No text found in selected target.)'
   ].join('\n'));
@@ -892,6 +906,19 @@ function handleContextRadarCapture(msg) {
   const current = els.input.value.trim();
   els.input.value = current ? `${current}\n\n${objectBlock}` : objectBlock;
   els.input.focus();
+
+  if (action === 'watch' && target.rect) {
+    lastCyberSnapshot = {
+      page: target.page || pageContext?.page || null,
+      rect: target.rect,
+      text,
+      capturedAt: new Date().toISOString(),
+      source: 'context_radar'
+    };
+    queueSaveState();
+    renderWatchRegionBtn();
+    if (!regionWatchActive) await toggleRegionWatch();
+  }
 }
 
 async function openAgntChat() {
@@ -954,7 +981,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 
   if (msg?.type === 'BROWSERPILOT_CONTEXT_RADAR_CAPTURED') {
-    handleContextRadarCapture(msg);
+    handleContextRadarCapture(msg).catch(e => setError(e.message));
   }
 
   // Echo/stream from AGNT agent chat (SSE) back into the sidebar placeholder.

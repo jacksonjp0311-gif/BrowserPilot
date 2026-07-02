@@ -48,6 +48,10 @@ This is intentional: BrowserPilot is designed to be a **non-intrusive browser op
 
 ## Cyber Snapshot
 
+![BrowserPilot Cyber Snapshot overlay selecting a visible page region](docs/images/browserpilot-cyber-snapshot.png)
+
+Cyber Snapshot is the user-controlled capture surface: the agent cannot silently choose the region. The operator positions the ice-blue overlay, captures visible text, and can optionally attach the viewport crop to the side-panel context.
+
 Cyber Snapshot lets the user manually select a visible page region with an ice-blue overlay and insert extracted text into the BrowserPilot side-panel composer.
 This implementation was transferred from the working `agnt-evo/browser-agents-edge-extension` Cyber Snapshot implementation.
 
@@ -66,6 +70,10 @@ Not yet included unless already present in the source implementation:
 ---
 
 ## Context Radar
+
+![BrowserPilot Context Radar target boxes over readable page regions](docs/images/browserpilot-context-radar.png)
+
+Context Radar is the page-understanding surface: it highlights likely readable/actionable regions so the human can choose what enters context instead of letting the agent scrape blindly.
 
 Context Radar adds a manual, DOM-first HUD that scans the visible page for likely context targets and draws glowing green boxes over readable items such as posts, tables, forms, code blocks, status panels, and composers.
 
@@ -91,6 +99,10 @@ test-pages/context-radar-qa.html
 ---
 
 ## Threat Scan / Threat Radar
+
+![BrowserPilot Threat Radar HUD and side-panel threat report](docs/images/browserpilot-threat-radar.png)
+
+Threat Radar is the safety surface: it pauses risky browser actions when local DOM signals look suspicious, shows the exact review HUD to the user, and keeps IP indicators framed as evidence rather than attribution.
 
 Threat Scan is a local-first DOM threat scan for the active tab. It replaces the visible Capture Page control as the primary safety action.
 

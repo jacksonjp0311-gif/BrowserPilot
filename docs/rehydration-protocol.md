@@ -109,6 +109,14 @@ npm run validate
 npm run validate:rcc
 ```
 
+Runtime certainty requires more than structural validation:
+
+- Reload the extension in Edge or Chrome.
+- Refresh the target http(s) page after reload.
+- Confirm the AGNT floating button appears.
+- Confirm Threat Scan, Cyber Snapshot, and Context Radar run on a normal page.
+- Confirm browser-internal pages produce a clear non-injectable-page message.
+
 For release work, also run:
 
 ```powershell

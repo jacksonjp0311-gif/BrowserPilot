@@ -35,6 +35,18 @@ async function agntFetch(path, { method = 'GET', body } = {}) {
   return json;
 }
 
+function normalizeAgentList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.agents)) return payload.agents;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.result)) return payload.result;
+  if (Array.isArray(payload?.results)) return payload.results;
+  if (Array.isArray(payload?.agents?.data)) return payload.agents.data;
+  if (Array.isArray(payload?.agents?.items)) return payload.agents.items;
+  return [];
+}
+
 // --- Edge Copilot Policy Gate ---
 function commandRiskScore(cmd = {}, pageContext = null) {
   const kind = String(cmd.kind || '').trim();
@@ -252,13 +264,23 @@ async function sendContentMessage(msg) {
 async function ensureContentScript(tabId) {
   if (typeof tabId !== 'number') throw new Error('No tabId for content script injection.');
   if (!chrome.scripting?.executeScript) return;
+  let tab = null;
+  try { tab = await chrome.tabs.get(tabId); } catch {}
+  const url = String(tab?.url || '');
+  if (url && !/^https?:\/\//i.test(url) && !/^file:\/\//i.test(url)) {
+    throw new Error('BrowserPilot page tools cannot run on browser-internal pages such as chrome://, edge://, extension pages, or store pages. Open a normal http(s) page and try again.');
+  }
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
       files: ['contentScript.js']
     });
   } catch (e) {
-    throw new Error('Could not inject page tools into this Edge tab: ' + (e?.message || String(e)));
+    const message = e?.message || String(e);
+    if (/Cannot access|chrome:\/|edge:\/|extension/i.test(message)) {
+      throw new Error('BrowserPilot page tools cannot run on this browser-controlled page. Open a normal http(s) page and try again.');
+    }
+    throw new Error('Could not inject page tools into this tab: ' + message);
   }
 }
 
@@ -275,9 +297,10 @@ async function sendTabMessage(tabId, msg) {
 
 // --- AGNT Agent Creation (silent - no auto-open) ---
 async function ensureDefaultAgent() {
-  const agents = await agntFetch('/api/agents/');
+  const firstPayload = await agntFetch('/api/agents/');
+  const agents = normalizeAgentList(firstPayload);
   const desiredName = 'Edge Tab Operator';
-  const existing = agents.agents?.find(a => a?.name === desiredName);
+  const existing = agents.find(a => a?.name === desiredName);
   if (existing) return { created: false, agents };
 
   await agntFetch('/api/users/settings'); // preflight
@@ -299,7 +322,7 @@ async function ensureDefaultAgent() {
     ].join('\n')
   };
   await agntFetch('/api/agents/save', { method: 'POST', body: { agent } });
-  return { created: true, agents: await agntFetch('/api/agents/') };
+  return { created: true, agents: normalizeAgentList(await agntFetch('/api/agents/')) };
 }
 
 // --- Exposed via chrome.runtime.onMessage ---
@@ -308,7 +331,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try {
       if (msg?.type === 'AGNT_GET_SETTINGS') { sendResponse({ ok: true, settings: await getSettings() }); return; }
       if (msg?.type === 'AGNT_SET_SETTINGS') { await chrome.storage.sync.set(msg.settings || {}); sendResponse({ ok: true }); return; }
-      if (msg?.type === 'AGNT_LIST_AGENTS') { const data = await agntFetch('/api/agents/'); sendResponse({ ok: true, agents: data.agents || [] }); return; }
+      if (msg?.type === 'AGNT_LIST_AGENTS') { const data = await agntFetch('/api/agents/'); sendResponse({ ok: true, agents: normalizeAgentList(data) }); return; }
       if (msg?.type === 'AGNT_ENSURE_DEFAULT_AGENT') { const out = await ensureDefaultAgent(); sendResponse({ ok: true, ...out }); return; }
       if (msg?.type === 'AGNT_CHAT') { const { agentId, message, context } = msg; const resp = await agntAgentChat(agentId, { message, context }); sendResponse({ ok: true, data: { response: resp } }); return; }
       if (msg?.type === 'AGNT_OPEN_SIDEPANEL' || msg?.type === 'BROWSERPILOT_OPEN_SIDEPANEL') {

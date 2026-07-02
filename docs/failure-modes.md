@@ -58,6 +58,42 @@ Mitigation:
 - Re-resolve active tab before sending page messages.
 - Show a clear local error for non-injectable pages.
 
+### Agent List Shape Drift
+
+Symptoms:
+
+- Side panel reports `agents.slice is not a function`, `agents.filter is not a function`, or the default agent is missing.
+- Agent search is blank even though AGNT has agents.
+
+Likely causes:
+
+- AGNT changed the `/api/agents/` response shape from an array to an object envelope such as `{ agents }`, `{ data }`, `{ items }`, or a paginated result.
+
+Mitigation:
+
+- Normalize agent-list responses in the background worker and side panel.
+- Ensure the default `Edge Tab Operator` path returns an array after create or lookup.
+- Keep `npm run validate` checking for response normalization helpers.
+
+### Floating Button Is Not Persistent
+
+Symptoms:
+
+- The AGNT floating button appears on some normal pages but disappears after site navigation or DOM rewrites.
+- Threat Scan, Cyber Snapshot, and Context Radar only work on pages where the content script is currently alive.
+
+Likely causes:
+
+- Browser-internal pages cannot run extension content scripts.
+- A site rewrote the document root or removed injected elements.
+- The extension reloaded and the old page still has stale injected DOM.
+
+Mitigation:
+
+- The content script should replace stale buttons on load and periodically remount the current runtime button.
+- Refresh normal http(s) tabs after extension reload.
+- Treat `chrome://`, `edge://`, extension pages, and store pages as non-injectable by design.
+
 ### Threat Signal Confusion
 
 Symptoms:

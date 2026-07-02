@@ -42,8 +42,21 @@
     #${ID}:active { transform: translateY(0px) scale(0.98); }
   `;
 
-  document.documentElement.appendChild(style);
-  document.documentElement.appendChild(fab);
+  function mountFab() {
+    if (!document.documentElement) return;
+    const existing = document.getElementById(ID);
+    if (existing && existing !== fab) existing.remove();
+    const existingStyle = document.getElementById(STYLE_ID);
+    if (existingStyle && existingStyle !== style) existingStyle.remove();
+    if (!style.isConnected) document.documentElement.appendChild(style);
+    if (!fab.isConnected) document.documentElement.appendChild(fab);
+  }
+
+  mountFab();
+  setInterval(mountFab, 2000);
+  try {
+    new MutationObserver(mountFab).observe(document.documentElement, { childList: true, subtree: true });
+  } catch {}
 
   function captureContext() {
     const selection = (window.getSelection && window.getSelection().toString()) || '';

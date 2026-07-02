@@ -59,6 +59,7 @@ for (const [label, extensionDir] of targets) {
     'function setError',
     'function pushMsg',
     'function setSelectedAgent',
+    'function normalizeAgentList',
     'async function bg',
     'function rebuildFromChatLog'
   ];
@@ -81,6 +82,9 @@ for (const [label, extensionDir] of targets) {
   }
   if ((label === 'edge' || label === 'chrome') && !backgroundText.includes('BROWSERPILOT_START_THREAT_SCAN')) {
     throw new Error(`[${label}] background.js must route BROWSERPILOT_START_THREAT_SCAN`);
+  }
+  if (!backgroundText.includes('function normalizeAgentList') || !backgroundText.includes('agents: normalizeAgentList')) {
+    throw new Error(`[${label}] background.js must normalize AGNT agent list responses`);
   }
 
   if (manifest.manifest_version !== 3) {

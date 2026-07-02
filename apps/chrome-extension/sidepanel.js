@@ -364,7 +364,20 @@ function setSelectedAgent(agent) {
   closeList();
 }
 
+function normalizeAgentList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.agents)) return payload.agents;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.result)) return payload.result;
+  if (Array.isArray(payload?.results)) return payload.results;
+  if (Array.isArray(payload?.agents?.data)) return payload.agents.data;
+  if (Array.isArray(payload?.agents?.items)) return payload.agents.items;
+  return [];
+}
+
 function renderAgentList() {
+  agents = normalizeAgentList(agents);
   const q = (els.agentSearch.value || '').trim().toLowerCase();
   filteredAgents = !q
     ? agents.slice(0, 200)
@@ -414,7 +427,7 @@ async function ensureAndLoadAgents() {
     throw new Error((res?.error || 'Failed to load agents') + detail);
   }
 
-  agents = res.agents || [];
+  agents = normalizeAgentList(res.agents || res);
 
   const s = await bg({ type: 'AGNT_GET_SETTINGS' });
   const saved = s?.settings?.selectedAgentId;

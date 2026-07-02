@@ -31,6 +31,16 @@ The supported command surface is intentionally small.
 - `attachImage` (content script file input)
 - `wait` (sidepanel local delay)
 
+## Page tool control messages
+
+The side panel can stop page-local tools without changing the saved chat or threat report state:
+
+```json
+{ "type": "BROWSERPILOT_STOP_PAGE_TOOLS" }
+```
+
+This clears Cyber Snapshot overlays, Context Radar overlays, transient Threat Radar HUDs, and Region Watch timers. It does not bypass Threat Lock, execute page JavaScript outside the content-script surfaces, or erase retained local report state.
+
 See the full details and examples in this file’s history and in the extension sources.
 
 ## Edge Copilot behavior

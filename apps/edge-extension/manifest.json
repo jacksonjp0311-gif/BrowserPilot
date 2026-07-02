@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BrowserPilot for Edge",
-  "version": "0.3.5",
-  "version_name": "0.3.5 Threat Report Flow",
+  "version": "0.3.6",
+  "version_name": "0.3.6 Stability Patch",
   "description": "Let an AGNT agent understand and operate the Microsoft Edge tab you are already using.",
   "action": {
     "default_title": "BrowserPilot for Edge",

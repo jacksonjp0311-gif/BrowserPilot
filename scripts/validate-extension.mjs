@@ -89,6 +89,18 @@ for (const [label, extensionDir] of targets) {
   if ((label === 'edge' || label === 'chrome') && (!contentText.includes('data-action="report-chat"') || !sidepanelText.includes('function reportThreatToChat'))) {
     throw new Error(`[${label}] extension must expose Threat Report to Chat flow`);
   }
+  if ((label === 'edge' || label === 'chrome') && (contentText.includes('setInterval(mountFab, 2000)') || contentText.includes('subtree: true'))) {
+    throw new Error(`[${label}] contentScript.js must not use unbounded FAB remount loops or full-subtree observers`);
+  }
+  if ((label === 'edge' || label === 'chrome') && (!contentText.includes('THREAT_SCAN_BUDGET') || !contentText.includes('nodesScanned') || !contentText.includes('scan_budget_exceeded'))) {
+    throw new Error(`[${label}] contentScript.js must expose Threat Scan budgets and partial-result metadata`);
+  }
+  if ((label === 'edge' || label === 'chrome') && (!contentText.includes('CONTEXT_RADAR_BUDGET') || !contentText.includes('candidatesScanned'))) {
+    throw new Error(`[${label}] contentScript.js must expose Context Radar budgets`);
+  }
+  if ((label === 'edge' || label === 'chrome') && (!contentText.includes('BROWSERPILOT_STOP_PAGE_TOOLS') || !sidepanelHtml.includes('id="stopPageToolsBtn"'))) {
+    throw new Error(`[${label}] extension must expose Stop All Page Tools`);
+  }
   if ((label === 'edge' || label === 'chrome') && !backgroundText.includes('BROWSERPILOT_START_THREAT_SCAN')) {
     throw new Error(`[${label}] background.js must route BROWSERPILOT_START_THREAT_SCAN`);
   }

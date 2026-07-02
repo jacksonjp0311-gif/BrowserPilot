@@ -432,6 +432,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
+      if (msg?.type === 'BROWSERPILOT_STOP_PAGE_TOOLS') {
+        const tabId = await resolveLiveTabId(msg.tabId);
+        if (typeof tabId !== 'number') throw new Error('No active tab');
+        const res = await sendTabMessage(tabId, { type: 'BROWSERPILOT_STOP_PAGE_TOOLS', reason: msg.reason || 'sidepanel_stop_all' });
+        await recordTelemetry('stop_all_page_tools', { tabId, ok: Boolean(res?.ok), status: res?.status || null });
+        sendResponse({ ...(res || {}), tabId });
+        return;
+      }
+
       if (msg?.type === 'BROWSERPILOT_START_CONTEXT_RADAR') {
         const tabId = await resolveLiveTabId(msg.tabId);
         if (typeof tabId !== 'number') throw new Error('No active tab');
@@ -439,6 +448,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await recordTelemetry(res?.ok ? 'context_radar_started' : 'context_radar_failed', {
           tabId,
           ok: Boolean(res?.ok),
+          durationMs: res?.metrics?.durationMs || null,
+          candidatesScanned: res?.metrics?.candidatesScanned || null,
+          aborted: Boolean(res?.aborted),
           error: res?.ok ? null : res?.error
         });
         sendResponse({ ...(res || {}), tabId });
@@ -455,6 +467,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           ok: Boolean(res?.ok),
           risk: res?.report?.risk || null,
           counts: res?.report?.counts || null,
+          durationMs: res?.report?.durationMs || null,
+          nodesScanned: res?.report?.nodesScanned || null,
+          aborted: Boolean(res?.report?.aborted),
           error: res?.ok ? null : res?.error
         });
         sendResponse({ ...(res || {}), tabId });

@@ -22,7 +22,8 @@ const els = {
   syncIndicatorBtn: document.getElementById('syncIndicatorBtn'),
   cleanSlateBtn: document.getElementById('cleanSlateBtn'),
   stopRow: document.getElementById('stopRow'),
-  stopBtn: document.getElementById('stopBtn')
+  stopBtn: document.getElementById('stopBtn'),
+  stopPageToolsBtn: document.getElementById('stopPageToolsBtn')
 };
 
 const STATE_KEY = 'agnt_sidepanel_state_v1';
@@ -722,6 +723,16 @@ async function stopCurrent() {
   syncStopUI();
 }
 
+async function stopAllPageTools(reason = 'sidepanel_stop_all') {
+  setError(null);
+  const res = await bg({ type: 'BROWSERPILOT_STOP_PAGE_TOOLS', tabId: targetTabId, reason });
+  if (!res?.ok) throw new Error(res?.error || 'Could not stop page tools');
+  regionWatchActive = false;
+  renderWatchRegionBtn();
+  await telemetry('stop_all_page_tools', { reason, status: res.status || null, tabId: res.tabId || targetTabId || null });
+  pushMsg('assistant', '[page tools] stopped active overlays, timers, and watchers.');
+}
+
 async function analyzeTelemetry() {
   const context = {
     page: pageContextStats(),
@@ -960,23 +971,28 @@ async function startThreatScan() {
   renderContextHint();
   const risk = String(report?.risk?.level || 'low').toUpperCase();
   const findings = Number(report?.counts?.findings || 0);
+  const budgetLine = report?.aborted ? 'Scan budget reached; partial local report returned.' : '';
   if (risk === 'MEDIUM' || risk === 'HIGH') {
     pushMsg('assistant', [
       '[threat scan] threat signal detected',
       `Risk: ${risk}`,
       `Findings: ${findings}`,
+      `Duration: ${report?.durationMs ?? 'n/a'}ms | Nodes: ${report?.nodesScanned ?? 'n/a'}`,
+      budgetLine,
       'Agent actions are paused pending review.',
       'Use the red HUD to acknowledge, dismiss, block, or send to sandbox.'
-    ].join('\n'));
+    ].filter(Boolean).join('\n'));
   } else {
     pushMsg('assistant', [
       '[threat scan] completed',
       'Risk: LOW',
       `Findings: ${findings}`,
+      `Duration: ${report?.durationMs ?? 'n/a'}ms | Nodes: ${report?.nodesScanned ?? 'n/a'}`,
+      budgetLine,
       'No medium/high local risk signals found.'
-    ].join('\n'));
+    ].filter(Boolean).join('\n'));
   }
-  await telemetry('threat_scan_completed', { risk: report?.risk || null, counts: report?.counts || null });
+  await telemetry('threat_scan_completed', { risk: report?.risk || null, counts: report?.counts || null, durationMs: report?.durationMs || null, nodesScanned: report?.nodesScanned || null, aborted: Boolean(report?.aborted), budget: report?.budget || null });
 }
 
 function insertThreatScanReport() {
@@ -1343,13 +1359,14 @@ async function startContextRadar() {
   const res = await bg({ type: 'BROWSERPILOT_START_CONTEXT_RADAR', tabId: targetTabId });
   if (!res?.ok) throw new Error(res?.error || 'Context Radar failed to start');
   if (typeof res.tabId === 'number') targetTabId = res.tabId;
-  await telemetry('context_radar_started', pageContextStats());
+  await telemetry('context_radar_started', { ...pageContextStats(), metrics: res.metrics || null, targets: res.targets || null, aborted: Boolean(res.aborted) });
   pushMsg('assistant', [
     '[context radar] scanning visible page targets.',
+    res.metrics ? `Scanned ${res.metrics.candidatesScanned} candidate(s) in ${res.metrics.durationMs}ms${res.aborted ? ' (budget reached)' : ''}.` : '',
     'Hover a green box to inspect it.',
     'Click a box to insert its text into the composer.',
     'Press Esc to cancel.'
-  ].join('\n'));
+  ].filter(Boolean).join('\n'));
 }
 
 async function handleContextRadarCapture(msg) {
@@ -1599,6 +1616,7 @@ els.sendBtn.addEventListener('click', () => {
 els.suggestBtn.addEventListener('click', () => analyzeTelemetry().catch(e => setError(e.message)));
 if (els.extractIpBtn) els.extractIpBtn.addEventListener('click', () => extractIpAddress().catch(e => setError(e.message)));
 if (els.stopBtn) els.stopBtn.addEventListener('click', () => stopCurrent().catch(e => setError(e.message)));
+if (els.stopPageToolsBtn) els.stopPageToolsBtn.addEventListener('click', () => stopAllPageTools().catch(e => setError(e.message)));
 if (els.cleanSlateBtn) els.cleanSlateBtn.addEventListener('click', () => cleanSlate());
 
 els.input.addEventListener('keydown', (e) => {

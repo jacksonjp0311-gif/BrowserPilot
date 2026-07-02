@@ -4,6 +4,84 @@
 (function () {
   const ID = 'agnt-browser-agents-fab';
   const STYLE_ID = 'agnt-browser-agents-fab-style';
+  const FAB_MAX_REMOUNTS = 8;
+  const FAB_REMOUNT_THROTTLE_MS = 3000;
+  const REGION_WATCH_MAX_MS = 10 * 60 * 1000;
+  const THREAT_SCAN_BUDGET = {
+    maxNodes: 1200,
+    maxLinks: 300,
+    maxFrames: 60,
+    maxForms: 80,
+    maxScripts: 120,
+    maxComments: 100,
+    maxDurationMs: 1800
+  };
+  const CONTEXT_RADAR_BUDGET = {
+    maxCandidates: 300,
+    maxDurationMs: 1500
+  };
+  const pageToolGovernor = {
+    activeTool: 'none',
+    startedAt: null,
+    stopReason: null,
+    timers: new Set(),
+    changeCount: 0
+  };
+
+  function telemetry(eventType, data = {}) {
+    chrome.runtime?.sendMessage?.({ type: 'AGNT_TELEMETRY', eventType, data }).catch(() => {});
+  }
+
+  function toolStatus(extra = {}) {
+    return {
+      activeTool: pageToolGovernor.activeTool,
+      startedAt: pageToolGovernor.startedAt,
+      stopReason: pageToolGovernor.stopReason,
+      ...extra
+    };
+  }
+
+  function startPageTool(name) {
+    if (pageToolGovernor.activeTool !== 'none' && pageToolGovernor.activeTool !== name) {
+      return { ok: false, error: `Page tool already active: ${pageToolGovernor.activeTool}`, status: toolStatus() };
+    }
+    pageToolGovernor.activeTool = name;
+    pageToolGovernor.startedAt = new Date().toISOString();
+    pageToolGovernor.stopReason = null;
+    return { ok: true, status: toolStatus() };
+  }
+
+  function clearGovernorTimers() {
+    for (const timer of pageToolGovernor.timers) {
+      clearTimeout(timer);
+      clearInterval(timer);
+    }
+    pageToolGovernor.timers.clear();
+  }
+
+  function finishPageTool(name, reason = 'completed') {
+    if (pageToolGovernor.activeTool === name) {
+      pageToolGovernor.activeTool = 'none';
+      pageToolGovernor.stopReason = reason;
+    }
+    return toolStatus();
+  }
+
+  function stopAllPageTools(reason = 'stop_all_page_tools') {
+    const previousTool = pageToolGovernor.activeTool;
+    const startedAt = pageToolGovernor.startedAt;
+    const durationMs = startedAt ? Date.now() - Date.parse(startedAt) : 0;
+    clearGovernorTimers();
+    document.getElementById('agnt-cyber-snapshot-root')?.remove();
+    document.getElementById('agnt-context-radar-root')?.remove();
+    document.getElementById('browserpilot-threat-root')?.remove();
+    stopCyberRegionWatch(reason);
+    pageToolGovernor.activeTool = 'none';
+    pageToolGovernor.startedAt = null;
+    pageToolGovernor.stopReason = reason;
+    telemetry('stop_all_page_tools', { previousTool, reason, durationMs });
+    return { ok: true, status: toolStatus({ previousTool }) };
+  }
 
   // Extension reloads invalidate old content-script listeners, but the DOM
   // button can remain on the page. Replace it so clicks use the current runtime.
@@ -42,20 +120,36 @@
     #${ID}:active { transform: translateY(0px) scale(0.98); }
   `;
 
+  let fabRemountCount = 0;
+  let lastFabRemountAt = 0;
+  let fabRemountTimer = null;
   function mountFab() {
     if (!document.documentElement) return;
+    fabRemountCount += 1;
     const existing = document.getElementById(ID);
     if (existing && existing !== fab) existing.remove();
     const existingStyle = document.getElementById(STYLE_ID);
     if (existingStyle && existingStyle !== style) existingStyle.remove();
     if (!style.isConnected) document.documentElement.appendChild(style);
     if (!fab.isConnected) document.documentElement.appendChild(fab);
+    telemetry('fab_remount_count', { count: fabRemountCount, max: FAB_MAX_REMOUNTS });
+  }
+
+  function scheduleBoundedFabRemount() {
+    if (fabRemountCount >= FAB_MAX_REMOUNTS) return;
+    const now = Date.now();
+    const wait = Math.max(0, FAB_REMOUNT_THROTTLE_MS - (now - lastFabRemountAt));
+    clearTimeout(fabRemountTimer);
+    fabRemountTimer = setTimeout(() => {
+      lastFabRemountAt = Date.now();
+      mountFab();
+    }, wait);
   }
 
   mountFab();
-  setInterval(mountFab, 2000);
+  for (let i = 1; i <= 3; i += 1) setTimeout(scheduleBoundedFabRemount, i * FAB_REMOUNT_THROTTLE_MS);
   try {
-    new MutationObserver(mountFab).observe(document.documentElement, { childList: true, subtree: true });
+    new MutationObserver(scheduleBoundedFabRemount).observe(document.documentElement, { childList: true });
   } catch {}
 
   function captureContext() {
@@ -252,27 +346,50 @@
   }
 
   let cyberRegionWatchTimer = null;
+  let cyberRegionWatchExpiryTimer = null;
   let cyberRegionWatchState = null;
   const CONTEXT_RADAR_MEMORY_KEY = 'browserpilot_context_radar_memory_v1';
 
-  function stopCyberRegionWatch() {
+  function stopCyberRegionWatch(reason = 'manual') {
     if (cyberRegionWatchTimer) clearInterval(cyberRegionWatchTimer);
+    if (cyberRegionWatchExpiryTimer) clearTimeout(cyberRegionWatchExpiryTimer);
+    const state = cyberRegionWatchState;
+    if (state) {
+      const durationMs = Date.now() - Date.parse(state.startedAt || new Date().toISOString());
+      telemetry('region_watch_stopped', {
+        reason,
+        durationMs,
+        changeCount: state.changeCount || 0
+      });
+    }
     cyberRegionWatchTimer = null;
+    cyberRegionWatchExpiryTimer = null;
     cyberRegionWatchState = null;
+    finishPageTool('regionWatch', reason);
   }
 
   function startCyberRegionWatch({ rect, previousText = '', page = null } = {}) {
     if (!rect) throw new Error('Region watch requires a Cyber Snapshot rectangle.');
-    stopCyberRegionWatch();
+    const gate = startPageTool('regionWatch');
+    if (!gate.ok) throw new Error(gate.error);
+    stopCyberRegionWatch('replaced');
+    pageToolGovernor.activeTool = 'regionWatch';
+    pageToolGovernor.startedAt = new Date().toISOString();
+    pageToolGovernor.stopReason = null;
     cyberRegionWatchState = {
       rect,
       page,
       previousText: String(previousText || ''),
       previousHash: hashString(previousText || ''),
-      startedAt: new Date().toISOString()
+      startedAt: pageToolGovernor.startedAt,
+      changeCount: 0
     };
     cyberRegionWatchTimer = setInterval(() => {
       try {
+        if (document.visibilityState === 'hidden') {
+          stopCyberRegionWatch('visibility_hidden');
+          return;
+        }
         const text = extractTextInViewportRect({
           left: Number(rect.x || 0),
           top: Number(rect.y || 0),
@@ -286,6 +403,7 @@
           const previousTextNow = cyberRegionWatchState.previousText;
           cyberRegionWatchState.previousText = text;
           cyberRegionWatchState.previousHash = nextHash;
+          cyberRegionWatchState.changeCount += 1;
           chrome.runtime.sendMessage({
             type: 'AGNT_CYBER_REGION_CHANGED',
             page: cyberRegionWatchState.page || { url: location.href, title: document.title },
@@ -297,9 +415,15 @@
         }
       } catch {}
     }, 1800);
+    cyberRegionWatchExpiryTimer = setTimeout(() => stopCyberRegionWatch('auto_expired_10m'), REGION_WATCH_MAX_MS);
+    pageToolGovernor.timers.add(cyberRegionWatchTimer);
+    pageToolGovernor.timers.add(cyberRegionWatchExpiryTimer);
+    telemetry('region_watch_started', { maxDurationMs: REGION_WATCH_MAX_MS });
   }
 
   function startCyberSnapshotOverlay() {
+    const gate = startPageTool('cyberSnapshot');
+    if (!gate.ok) throw new Error(gate.error);
     const existing = document.getElementById('agnt-cyber-snapshot-root');
     if (existing) existing.remove();
 
@@ -452,6 +576,7 @@
         chrome.runtime.sendMessage({ type: 'AGNT_CYBER_SNAPSHOT_RESULT', cancelled: true }).catch(() => {});
       }
       root.remove();
+      finishPageTool('cyberSnapshot', cancelled ? 'cancelled' : 'completed');
     }
 
     function capture() {
@@ -654,7 +779,10 @@
     }
   }
 
-  function detectContextTargets(limit = 18) {
+  function detectContextTargets(limit = 18, budget = CONTEXT_RADAR_BUDGET) {
+    const startedAt = performance.now();
+    let candidatesScanned = 0;
+    let aborted = false;
     const selectors = [
       'article', '[role="article"]', 'main', 'section', 'form', 'table',
       '[role="textbox"]', '[contenteditable="true"]', 'textarea', 'input',
@@ -668,6 +796,11 @@
     const candidates = [];
 
     for (const el of document.querySelectorAll(selectors.join(','))) {
+      candidatesScanned += 1;
+      if (candidatesScanned > budget.maxCandidates || performance.now() - startedAt > budget.maxDurationMs) {
+        aborted = true;
+        break;
+      }
       if (!(el instanceof HTMLElement) || seen.has(el)) continue;
       seen.add(el);
       if (el.id === ID || el.closest('#agnt-context-radar-root, #agnt-cyber-snapshot-root')) continue;
@@ -719,17 +852,29 @@
       if (!overlaps) picked.push(item);
       if (picked.length >= limit) break;
     }
-    return picked;
+    return {
+      targets: picked,
+      metrics: {
+        durationMs: Math.round(performance.now() - startedAt),
+        candidatesScanned,
+        aborted,
+        maxCandidates: budget.maxCandidates,
+        maxDurationMs: budget.maxDurationMs
+      }
+    };
   }
 
   async function startContextRadarOverlay() {
+    const gate = startPageTool('contextRadar');
+    if (!gate.ok) throw new Error(gate.error);
     const existing = document.getElementById('agnt-context-radar-root');
     if (existing) existing.remove();
 
     const memory = await getContextRadarMemory();
     const ignoredLabels = memory.ignoredLabels || {};
     const preferredLabels = memory.preferredLabels || {};
-    const targets = detectContextTargets(24)
+    const detection = detectContextTargets(24);
+    const targets = detection.targets
       .filter((target) => Number(ignoredLabels[target.label] || 0) < 3)
       .map((target) => ({
         ...target,
@@ -737,6 +882,8 @@
       }))
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, 18);
+    telemetry('context_radar_duration_ms', detection.metrics);
+    telemetry('context_radar_candidates_scanned', detection.metrics);
     const root = document.createElement('div');
     root.id = 'agnt-context-radar-root';
     root.innerHTML = `
@@ -851,6 +998,7 @@
       document.removeEventListener('keydown', onKey, true);
       if (cancelled) chrome.runtime.sendMessage({ type: 'BROWSERPILOT_CONTEXT_RADAR_CAPTURED', cancelled: true }).catch(() => {});
       root.remove();
+      finishPageTool('contextRadar', cancelled ? 'cancelled' : 'completed');
     }
     function onKey(e) {
       if (e.key === 'Escape') {
@@ -940,6 +1088,7 @@
 
     document.documentElement.appendChild(root);
     document.addEventListener('keydown', onKey, true);
+    return { ok: true, started: true, metrics: detection.metrics, targets: targets.length, aborted: detection.metrics.aborted };
   }
 
   function normalizeIpAddress(value) {
@@ -1067,11 +1216,25 @@
   }
 
   function runThreatScan() {
+    const startedAt = performance.now();
+    const budget = THREAT_SCAN_BUDGET;
+    let aborted = false;
+    let nodesScanned = 0;
+    let linksScanned = 0;
+    let framesScanned = 0;
+    let formsScanned = 0;
+    let scriptsScanned = 0;
+    let commentsScanned = 0;
+    function overBudget() {
+      if (performance.now() - startedAt > budget.maxDurationMs) aborted = true;
+      return aborted;
+    }
     const findings = [];
     const promptRe = /ignore (all )?previous instructions|system prompt|developer message|hidden instruction|do not tell the user|do not reveal this|exfiltrate|api key|bearer token|password|seed phrase|wallet|private key|run this command|tool call|call this tool|send the user data|bypass|jailbreak|override safety|agent instruction|assistant instruction/i;
     const allTextSources = [];
-    const nodes = Array.from(document.querySelectorAll('body *')).slice(0, 2500);
-    for (const el of nodes) {
+    for (const el of document.querySelectorAll('body *')) {
+      nodesScanned += 1;
+      if (nodesScanned > budget.maxNodes || overBudget()) { aborted = true; break; }
       if (!(el instanceof HTMLElement) || el.id === ID || el.closest('#agnt-context-radar-root, #agnt-cyber-snapshot-root, #browserpilot-threat-root')) continue;
       const style = getComputedStyle(el);
       const rect = el.getBoundingClientRect();
@@ -1088,7 +1251,9 @@
       if (handlerAttrs.length) addThreatFinding(findings, 'inline_handler', handlerAttrs.some((h) => /key|copy|paste/.test(h)) ? 'medium' : 'low', `Inline event handler(s): ${handlerAttrs.join(', ')}`, el, textBits || el.outerHTML.slice(0, 220), { opacity: Number(style.opacity || 1), zIndex: z });
     }
 
-    for (const anchor of Array.from(document.querySelectorAll('a[href]')).slice(0, 600)) {
+    for (const anchor of document.querySelectorAll('a[href]')) {
+      linksScanned += 1;
+      if (linksScanned > budget.maxLinks || overBudget()) { aborted = true; break; }
       const text = String(anchor.innerText || anchor.textContent || '').trim();
       const href = anchor.getAttribute('href') || '';
       allTextSources.push({ text: href, source: 'link_href' });
@@ -1100,7 +1265,9 @@
       if (/[?&](token|auth|redirect|callback|next|url)=/i.test(url.search)) addThreatFinding(findings, 'link_mismatch', 'medium', 'Link contains sensitive redirect/auth-like query parameter', anchor, `${text} ${href}`);
     }
 
-    for (const frame of Array.from(document.querySelectorAll('iframe')).slice(0, 120)) {
+    for (const frame of document.querySelectorAll('iframe')) {
+      framesScanned += 1;
+      if (framesScanned > budget.maxFrames || overBudget()) { aborted = true; break; }
       const src = frame.getAttribute('src') || '';
       allTextSources.push({ text: src, source: 'iframe_src' });
       let thirdParty = false; try { thirdParty = new URL(src, location.href).origin !== location.origin; } catch {}
@@ -1110,7 +1277,9 @@
       if (thirdParty || hidden) addThreatFinding(findings, 'iframe', thirdParty ? 'medium' : 'low', `${thirdParty ? 'Third-party' : 'Hidden/tiny'} iframe; cross-origin DOM may be unreadable`, frame, src, { hiddenFromUser: hidden, opacity: Number(style.opacity || 1), zIndex: style.zIndex });
     }
 
-    for (const form of Array.from(document.querySelectorAll('form')).slice(0, 120)) {
+    for (const form of document.querySelectorAll('form')) {
+      formsScanned += 1;
+      if (formsScanned > budget.maxForms || overBudget()) { aborted = true; break; }
       const formText = String(form.innerText || '') + ' ' + String(form.getAttribute('action') || '');
       const hasCredential = Boolean(form.querySelector('input[type="password"], input[name*="token" i], input[name*="key" i]')) || /seed phrase|wallet|api key|password|payment|card/i.test(formText);
       const action = form.getAttribute('action') || '';
@@ -1119,19 +1288,21 @@
       if (hasCredential || external) addThreatFinding(findings, 'credential_form', hasCredential ? 'high' : 'medium', `${hasCredential ? 'Credential/payment-like form' : 'External form action'}${external ? ' to external origin' : ''}`, form, formText);
     }
 
-    for (const script of Array.from(document.querySelectorAll('script[src]')).slice(0, 240)) {
+    for (const script of document.querySelectorAll('script[src]')) {
+      scriptsScanned += 1;
+      if (scriptsScanned > budget.maxScripts || overBudget()) { aborted = true; break; }
       allTextSources.push({ text: script.getAttribute('src') || '', source: 'script_src' });
     }
-    for (const el of Array.from(document.querySelectorAll('noscript,template')).slice(0, 120)) {
+    for (const el of document.querySelectorAll('noscript,template')) {
+      if (overBudget()) { aborted = true; break; }
       const text = String(el.textContent || '');
       allTextSources.push({ text, source: el.tagName.toLowerCase() });
       if (promptRe.test(text)) addThreatFinding(findings, 'hidden_prompt', 'medium', `${el.tagName.toLowerCase()} contains prompt-like text`, el, text, { hiddenFromUser: true });
     }
     try {
       const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_COMMENT);
-      let count = 0;
-      while (walker.nextNode() && count < 240) {
-        count += 1;
+      while (walker.nextNode() && commentsScanned < budget.maxComments && !overBudget()) {
+        commentsScanned += 1;
         const text = String(walker.currentNode.nodeValue || '');
         allTextSources.push({ text, source: 'html_comment' });
         if (promptRe.test(text)) addThreatFinding(findings, 'hidden_prompt', 'medium', 'HTML comment contains prompt-like text', walker.currentNode.parentElement || document.body, text, { hiddenFromUser: true });
@@ -1145,6 +1316,7 @@
       const key = `${ip.version}:${ip.value}`;
       if (!seenIps.has(key)) { seenIps.add(key); uniqueIps.push(ip); }
     }
+    const durationMs = Math.round(performance.now() - startedAt);
     const risk = scoreThreatFindings(findings, uniqueIps);
     const counts = {
       findings: findings.length,
@@ -1154,8 +1326,19 @@
       iframes: findings.filter((f) => f.category === 'iframe').length,
       forms: findings.filter((f) => f.category === 'credential_form').length,
       handlers: findings.filter((f) => f.category === 'inline_handler').length,
-      ipIndicators: uniqueIps.length
+      ipIndicators: uniqueIps.length,
+      nodesScanned,
+      linksScanned,
+      framesScanned,
+      formsScanned,
+      scriptsScanned,
+      commentsScanned
     };
+    const limitations = ['DOM-first scan only', 'Does not prove malware', 'Cannot inspect all runtime JS listeners', 'Cannot read cross-origin iframe DOM', 'Does not execute untrusted scripts', 'IP addresses are infrastructure indicators, not attribution'];
+    if (aborted) limitations.push('scan_budget_exceeded');
+    telemetry('threat_scan_duration_ms', { durationMs, aborted });
+    telemetry('threat_scan_nodes_scanned', { nodesScanned, maxNodes: budget.maxNodes, aborted });
+    telemetry('threat_scan_aborted', { aborted, durationMs, budget });
     return {
       schemaVersion: 'browserpilot.threatScan.v1',
       reportId: `thr-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
@@ -1165,9 +1348,13 @@
       counts,
       findings,
       ipIndicators: uniqueIps,
+      durationMs,
+      nodesScanned,
+      aborted,
+      budget,
       recommendedAction: risk.level === 'high' ? 'threat_lock' : (risk.level === 'medium' ? 'review' : 'continue'),
       privacy: { localOnly: true, rawTextStored: false, redactedByDefault: true, apiReviewRequiresHumanApproval: true },
-      limitations: ['DOM-first scan only', 'Does not prove malware', 'Cannot inspect all runtime JS listeners', 'Cannot read cross-origin iframe DOM', 'Does not execute untrusted scripts', 'IP addresses are infrastructure indicators, not attribution']
+      limitations
     };
   }
 
@@ -1403,8 +1590,11 @@
   }
 
   function startThreatScanOverlay() {
+    const gate = startPageTool('threatScan');
+    if (!gate.ok) throw new Error(gate.error);
     const report = runThreatScan();
     if (report.risk.level === 'medium' || report.risk.level === 'high') renderThreatFoundHud(report);
+    finishPageTool('threatScan', report.aborted ? 'scan_budget_exceeded' : 'completed');
     return report;
   }
 
@@ -1439,25 +1629,30 @@
 
         if (msg?.type === 'AGNT_START_CYBER_SNAPSHOT' || msg?.type === 'BROWSERPILOT_START_CYBER_SNAPSHOT') {
           startCyberSnapshotOverlay();
-          sendResponse({ ok: true, started: true });
+          sendResponse({ ok: true, started: true, status: toolStatus() });
           return;
         }
 
         if (msg?.type === 'AGNT_START_REGION_WATCH' || msg?.type === 'BROWSERPILOT_START_REGION_WATCH') {
           startCyberRegionWatch({ rect: msg.rect, previousText: msg.previousText || '', page: msg.page || null });
-          sendResponse({ ok: true, watching: true });
+          sendResponse({ ok: true, watching: true, status: toolStatus() });
           return;
         }
 
         if (msg?.type === 'AGNT_STOP_REGION_WATCH' || msg?.type === 'BROWSERPILOT_STOP_REGION_WATCH') {
-          stopCyberRegionWatch();
-          sendResponse({ ok: true, watching: false });
+          stopCyberRegionWatch('manual');
+          sendResponse({ ok: true, watching: false, status: toolStatus() });
+          return;
+        }
+
+        if (msg?.type === 'BROWSERPILOT_STOP_PAGE_TOOLS') {
+          sendResponse(stopAllPageTools(msg.reason || 'sidepanel_stop_all'));
           return;
         }
 
         if (msg?.type === 'BROWSERPILOT_START_CONTEXT_RADAR') {
-          await startContextRadarOverlay();
-          sendResponse({ ok: true, started: true });
+          const result = await startContextRadarOverlay();
+          sendResponse(result || { ok: true, started: true, status: toolStatus() });
           return;
         }
 
@@ -1657,4 +1852,9 @@
 
     return true;
   });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') stopCyberRegionWatch('visibility_hidden');
+  }, true);
+  window.addEventListener('pagehide', () => stopAllPageTools('pagehide'), { once: true });
+  window.addEventListener('beforeunload', () => stopAllPageTools('beforeunload'), { once: true });
 })();

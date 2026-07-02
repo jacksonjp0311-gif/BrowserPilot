@@ -7,6 +7,8 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 - The extension talks to a user-configured AGNT server.
 - AGNT auth is a bearer token stored in extension sync storage.
 - Browser actions are limited to the command types implemented in `contentScript.js` and `background.js`.
+- BrowserPilot is always available, not always scanning. Heavy page tools are explicit, bounded, stoppable, and budgeted.
+- A Page Tool Governor permits one heavy page tool at a time and exposes Stop All Page Tools for overlays/watchers.
 - Page context capture is bounded:
   - selection is capped
   - page text is capped
@@ -26,10 +28,12 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 ## Context Radar
 
 - Context Radar is user-initiated.
+- Context Radar has a candidate/time budget and returns partial results when the budget is reached.
 - It highlights likely visible page context items with a semi-transparent HUD.
 - It captures text only after the user chooses a highlighted target action.
 - Available actions are Capture, Watch, Target, and Ignore.
 - Watch arms the existing visible-region watcher for a user-selected target.
+- Region Watch is one-at-a-time, stoppable, stops on hidden/unload, and auto-expires after 10 minutes.
 - Ignore stores a local preference to suppress repeated target types in future scans.
 - It inserts captured target text and metadata into the composer for human review.
 - It does not auto-send.
@@ -39,6 +43,7 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 
 - Threat Scan is user-initiated and local-first.
 - It performs a DOM-first static scan only.
+- It has node/link/frame/form/script/comment/time budgets and can return partial reports with `scan_budget_exceeded`.
 - It does not execute untrusted page JavaScript.
 - It does not fetch suspicious URLs.
 - It does not auto-send raw page data to AGNT.

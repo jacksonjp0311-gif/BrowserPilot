@@ -90,9 +90,30 @@ Likely causes:
 
 Mitigation:
 
-- The content script should replace stale buttons on load and periodically remount the current runtime button.
+- The content script should replace stale buttons on load and use only bounded, throttled remount attempts.
 - Refresh normal http(s) tabs after extension reload.
 - Treat `chrome://`, `edge://`, extension pages, and store pages as non-injectable by design.
+
+### Page Tool Pressure
+
+Symptoms:
+
+- Browser slows down or freezes after BrowserPilot runs fine at first.
+- Heavy sites keep accumulating overlays, watchers, DOM scans, or remount work.
+
+Likely causes:
+
+- Page tools run concurrently or keep running after the operator has moved on.
+- Full-page scans exceed practical budgets on large infinite-scroll pages.
+
+Mitigation:
+
+- BrowserPilot is always available, not always scanning.
+- Keep Cyber Snapshot, Context Radar, Threat Scan, Extract IP, and Region Watch explicit and user-triggered.
+- Use the Page Tool Governor so only one heavy page tool runs at a time.
+- Keep Threat Scan and Context Radar budgeted with duration/count/aborted metadata.
+- Stop Region Watch on hidden/unload and auto-expire after 10 minutes.
+- Use Stop All Page Tools to clear overlays/timers without deleting saved reports.
 
 ### Threat Signal Confusion
 

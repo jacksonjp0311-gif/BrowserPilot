@@ -120,5 +120,38 @@ for (const [label, extensionDir] of targets) {
     throw new Error(`[${label}] Missing side_panel.default_path`);
   }
 
+  const requiredOptionalPermissions = [
+    'history',
+    'bookmarks',
+    'cookies',
+    'webRequest',
+    'nativeMessaging',
+    'identity',
+    'sessions',
+    'topSites',
+    'tabGroups',
+    'browsingData',
+    'contentSettings',
+    'privacy',
+    'desktopCapture',
+    'pageCapture',
+    'idle',
+    'unlimitedStorage'
+  ];
+  const optionalPermissions = new Set(manifest.optional_permissions || []);
+  const missingOptionalPermissions = requiredOptionalPermissions.filter((perm) => !optionalPermissions.has(perm));
+  if ((label === 'edge' || label === 'chrome') && missingOptionalPermissions.length) {
+    throw new Error(`[${label}] manifest missing Jarvis optional permissions: ${missingOptionalPermissions.join(', ')}`);
+  }
+  const requiredJarvisPermissions = ['debugger', 'declarativeNetRequest', 'declarativeNetRequestWithHostAccess'];
+  const requiredPermissions = new Set(manifest.permissions || []);
+  const missingRequiredJarvisPermissions = requiredJarvisPermissions.filter((perm) => !requiredPermissions.has(perm));
+  if ((label === 'edge' || label === 'chrome') && missingRequiredJarvisPermissions.length) {
+    throw new Error(`[${label}] manifest missing required Jarvis permissions: ${missingRequiredJarvisPermissions.join(', ')}`);
+  }
+  if ((label === 'edge' || label === 'chrome') && (!sidepanelHtml || !fs.readFileSync(path.join(extensionDir, 'options.js'), 'utf8').includes('JARVIS_OPTIONAL_PERMISSIONS'))) {
+    throw new Error(`[${label}] options.js must expose Jarvis permission matrix`);
+  }
+
   console.log(`BrowserPilot ${label} extension validated: ${manifest.name} ${manifest.version}`);
 }

@@ -115,6 +115,25 @@ Mitigation:
 - Stop Region Watch on hidden/unload and auto-expire after 10 minutes.
 - Use Stop All Page Tools to clear overlays/timers without deleting saved reports.
 
+### Permission Creep
+
+Symptoms:
+
+- A broad optional permission is treated as authorization to use it silently.
+- A high-risk permission such as `cookies`, `debugger`, or `nativeMessaging` is enabled without a clear operator action.
+
+Likely causes:
+
+- Permission declaration is confused with product behavior.
+- The Options page is used as a blanket capability unlock without per-action UX.
+
+Mitigation:
+
+- Keep every optional permission tied to a visible Jarvis action.
+- Label purpose and risk in the Options permission matrix.
+- Preserve redacted logs for high-risk actions.
+- Do not silently read cookies, scrape history, attach debugger, or use native messaging.
+
 ### Threat Signal Confusion
 
 Symptoms:

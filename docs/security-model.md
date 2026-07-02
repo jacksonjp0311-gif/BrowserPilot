@@ -9,6 +9,7 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 - Browser actions are limited to the command types implemented in `contentScript.js` and `background.js`.
 - BrowserPilot is always available, not always scanning. Heavy page tools are explicit, bounded, stoppable, and budgeted.
 - A Page Tool Governor permits one heavy page tool at a time and exposes Stop All Page Tools for overlays/watchers.
+- Advanced Jarvis permissions are optional and user-granted from Options. Declaring a permission does not authorize silent use.
 - Page context capture is bounded:
   - selection is capped
   - page text is capped
@@ -78,6 +79,18 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 - BrowserPilot does not publicly post IP addresses.
 - BrowserPilot does not provide attack, scan, retaliation, or doxxing actions.
 - Authority packages are local/exportable evidence bundles for responsible disclosure.
+
+## Optional Jarvis Permissions
+
+- Workflow recovery: `history`, `sessions`, `topSites`.
+- Evidence trails: `bookmarks`, `tabGroups`.
+- Threat Lock / network evidence: `declarativeNetRequest`, `declarativeNetRequestWithHostAccess`, `webRequest`.
+- Privacy/browser diagnostics: `browsingData`, `privacy`, `contentSettings`, `management`.
+- Capture/export: `downloads`, `pageCapture`, `desktopCapture`, `tabCapture`, `offscreen`, `unlimitedStorage`.
+- Operator bridge: `notifications`, `alarms`, `clipboardRead`, `clipboardWrite`, `idle`.
+- High-risk lab/bridge: `cookies`, `debugger`, `nativeMessaging`, `identity`.
+
+Chrome does not allow `debugger` or declarative net request permissions to be requested as ordinary optional permissions, so BrowserPilot declares them in the manifest and treats their use as high-risk product behavior that still requires explicit operator action. High-risk permissions must stay behind explicit user actions and redacted logs. BrowserPilot must not silently extract cookie values, scrape history, attach the debugger, fetch suspicious URLs, bypass policy, or report anything without user action.
 
 ## Modes (and what they mean)
 

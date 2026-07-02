@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BrowserPilot for Edge",
-  "version": "0.3.6",
-  "version_name": "0.3.6 Stability Patch",
+  "version": "0.3.7",
+  "version_name": "0.3.7 Jarvis Permission Matrix",
   "description": "Let an AGNT agent understand and operate the Microsoft Edge tab you are already using.",
   "action": {
     "default_title": "BrowserPilot for Edge",
@@ -28,16 +28,36 @@
     "scripting",
     "sidePanel",
     "webNavigation",
-    "contextMenus"
+    "contextMenus",
+    "debugger",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
   ],
   "optional_permissions": [
-    "notifications",
-    "downloads",
+    "alarms",
+    "bookmarks",
+    "browsingData",
     "clipboardRead",
     "clipboardWrite",
-    "alarms",
+    "contentSettings",
+    "cookies",
+    "desktopCapture",
+    "downloads",
+    "history",
+    "identity",
+    "idle",
+    "management",
+    "nativeMessaging",
+    "notifications",
     "offscreen",
-    "tabCapture"
+    "pageCapture",
+    "privacy",
+    "sessions",
+    "tabCapture",
+    "tabGroups",
+    "topSites",
+    "unlimitedStorage",
+    "webRequest"
   ],
   "host_permissions": [
     "<all_urls>",

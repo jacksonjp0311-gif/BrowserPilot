@@ -15,6 +15,36 @@ const permRefreshBtn = document.getElementById('permRefresh');
 const permStatusEl = document.getElementById('permStatus');
 const permBoxEl = document.getElementById('permBox');
 
+const JARVIS_OPTIONAL_PERMISSIONS = [
+  { perm: 'notifications', group: 'operator feedback', risk: 'low', purpose: 'show local Jarvis status and completion alerts' },
+  { perm: 'alarms', group: 'operator feedback', risk: 'low', purpose: 'schedule bounded local reminders and expiry checks' },
+  { perm: 'clipboardRead', group: 'clipboard', risk: 'medium', purpose: 'read clipboard only after explicit paste/review action' },
+  { perm: 'clipboardWrite', group: 'clipboard', risk: 'medium', purpose: 'copy reports, commands, or evidence snippets after user action' },
+  { perm: 'downloads', group: 'files', risk: 'medium', purpose: 'export local reports, snapshots, and evidence bundles' },
+  { perm: 'pageCapture', group: 'files', risk: 'medium', purpose: 'save approved page snapshots as local artifacts' },
+  { perm: 'history', group: 'workflow memory', risk: 'high', purpose: 'explicit recent-page recovery only' },
+  { perm: 'topSites', group: 'workflow memory', risk: 'high', purpose: 'optional browser workflow recall surface' },
+  { perm: 'sessions', group: 'workflow memory', risk: 'high', purpose: 'recover recently closed tabs/windows after user request' },
+  { perm: 'bookmarks', group: 'research trails', risk: 'medium', purpose: 'save or retrieve user-approved evidence trails' },
+  { perm: 'tabGroups', group: 'research trails', risk: 'medium', purpose: 'organize investigation tabs into named groups' },
+  { perm: 'declarativeNetRequest', group: 'threat lock', risk: 'high', purpose: 'future reversible local block rules', required: true },
+  { perm: 'declarativeNetRequestWithHostAccess', group: 'threat lock', risk: 'high', purpose: 'future host-aware local block rules', required: true },
+  { perm: 'webRequest', group: 'network evidence', risk: 'high', purpose: 'metadata-only request observation; no content capture' },
+  { perm: 'cookies', group: 'sensitive diagnostics', risk: 'very high', purpose: 'redacted login-state diagnostics only; no cookie value extraction' },
+  { perm: 'debugger', group: 'browser lab', risk: 'very high', purpose: 'deep inspection only after explicit advanced approval', required: true },
+  { perm: 'nativeMessaging', group: 'local bridge', risk: 'very high', purpose: 'future companion-app/sandbox bridge; separate setup required' },
+  { perm: 'identity', group: 'account bridge', risk: 'high', purpose: 'future account/login bridge; not needed for local mode' },
+  { perm: 'management', group: 'environment diagnostics', risk: 'high', purpose: 'inspect extension environment for support/debug flows' },
+  { perm: 'browsingData', group: 'privacy tools', risk: 'high', purpose: 'future explicit cleanup flow for local browser data' },
+  { perm: 'contentSettings', group: 'privacy tools', risk: 'high', purpose: 'future explicit site-setting diagnostics and repair prompts' },
+  { perm: 'privacy', group: 'privacy tools', risk: 'high', purpose: 'future read-only privacy-setting diagnostics' },
+  { perm: 'idle', group: 'operator state', risk: 'medium', purpose: 'detect operator idle state before long-running local flows' },
+  { perm: 'unlimitedStorage', group: 'local vault', risk: 'medium', purpose: 'larger local report vaults and evidence archives' },
+  { perm: 'desktopCapture', group: 'capture', risk: 'high', purpose: 'explicit screen capture prompt only' },
+  { perm: 'tabCapture', group: 'capture', risk: 'high', purpose: 'explicit tab capture prompt only' },
+  { perm: 'offscreen', group: 'capture', risk: 'medium', purpose: 'offscreen document support for bounded capture/audio tasks' }
+];
+
 function setErr(msg) {
   // Base options error box
   if (!msg) {
@@ -35,19 +65,13 @@ async function refreshPermissionsStatus() {
   if (!permStatusEl) return;
   permStatusEl.textContent = 'Checking…';
 
-  const optionalPerms = [
-    'notifications',
-    'downloads',
-    'clipboardRead',
-    'clipboardWrite',
-    'contextMenus',
-    'alarms',
-    'offscreen',
-    'tabCapture'
-  ];
+  const optionalPerms = JARVIS_OPTIONAL_PERMISSIONS.map((item) => item.perm);
 
   const checks = await Promise.all(optionalPerms.map((p) => new Promise((resolve) => {
-    chrome.permissions.contains({ permissions: [p] }, (ok) => resolve({ perm: p, ok: Boolean(ok) }));
+    chrome.permissions.contains({ permissions: [p] }, (ok) => {
+      const error = chrome.runtime.lastError?.message || '';
+      resolve({ perm: p, ok: Boolean(ok), error });
+    });
   })));
 
   const hostOk = await new Promise((resolve) => {
@@ -55,8 +79,20 @@ async function refreshPermissionsStatus() {
   });
 
   const lines = [];
-  lines.push('Optional permissions:');
-  for (const c of checks) lines.push(`- ${c.ok ? '[x]' : '[ ]'} ${c.perm}`);
+  lines.push('Optional Jarvis permissions:');
+  const byPerm = new Map(checks.map((item) => [item.perm, item.ok]));
+  let currentGroup = '';
+  for (const item of JARVIS_OPTIONAL_PERMISSIONS) {
+    if (item.group !== currentGroup) {
+      currentGroup = item.group;
+      lines.push('');
+      lines.push(`${currentGroup}:`);
+    }
+    const ok = byPerm.get(item.perm);
+    const check = checks.find((entry) => entry.perm === item.perm);
+    const mode = item.required ? 'required declaration' : 'optional request';
+    lines.push(`- ${ok ? '[x]' : '[ ]'} ${item.perm} | ${mode} | ${item.risk} | ${item.purpose}${check?.error ? ` | ${check.error}` : ''}`);
+  }
   lines.push('');
   lines.push(`Optional host access (<all_urls>): ${hostOk ? '[x] enabled' : '[ ] not enabled'}`);
 
@@ -68,20 +104,13 @@ async function requestJarvisPermissions() {
   setPermBox('Requesting…');
   permStatusEl.textContent = 'Requesting…';
 
-  const permissions = [
-    'notifications',
-    'downloads',
-    'clipboardRead',
-    'clipboardWrite',
-    'contextMenus',
-    'alarms',
-    'offscreen',
-    'tabCapture'
-  ];
+  const permissions = JARVIS_OPTIONAL_PERMISSIONS.filter((item) => !item.required).map((item) => item.perm);
 
   const ok = await new Promise((resolve) => {
     chrome.permissions.request({ permissions, origins: ['<all_urls>'] }, (granted) => {
       // If the user dismisses, granted is false and lastError is usually empty.
+      const error = chrome.runtime.lastError?.message || '';
+      if (error) setPermBox(`Request failed: ${error}`);
       resolve(Boolean(granted));
     });
   });

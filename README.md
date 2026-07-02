@@ -60,6 +60,16 @@ Current stability rules:
 
 ---
 
+## Jarvis Permission Matrix
+
+BrowserPilot v0.3.7 expands the Jarvis permission matrix. Most surfaces are optional capabilities, not silent behavior. Chrome requires `debugger` and declarative net request permissions to be manifest declarations rather than runtime optional requests, so those are marked as required declarations in Options.
+
+Added advanced optional surfaces include recent workflow recovery (`history`, `sessions`, `topSites`), evidence trails (`bookmarks`, `tabGroups`), local threat-lock/network surfaces (`declarativeNetRequest`, `webRequest`), privacy/browser diagnostics (`browsingData`, `privacy`, `contentSettings`, `management`), capture surfaces (`desktopCapture`, `pageCapture`, `tabCapture`, `offscreen`), and explicitly high-risk lab/bridge surfaces (`cookies`, `debugger`, `nativeMessaging`, `identity`).
+
+High-risk permissions must remain tied to explicit user actions and redacted operator logs. They do not permit silent cookie extraction, silent scraping, debugger attachment, native bridge calls, autonomous reporting, suspicious URL fetching, or IP attribution.
+
+---
+
 ## Cyber Snapshot
 
 ![BrowserPilot Cyber Snapshot overlay selecting a visible page region](docs/images/browserpilot-cyber-snapshot.png)
@@ -161,9 +171,9 @@ IP addresses are network indicators only. They are not proof of attacker identit
 
 ## Network IOC Capture / Authority Report Package
 
-Network IOC Capture is optional and gated. BrowserPilot v0.3.6 generates local IOC/evidence packages only after a user-reviewed suspicious or likely threat flow.
+Network IOC Capture is optional and gated. BrowserPilot v0.3.7 generates local IOC/evidence packages only after a user-reviewed suspicious or likely threat flow.
 
-Threat Screens in v0.3.6 add an optional evidence HUD next to the red Threat Radar decision HUD. Each screen shows the local finding category, risk/severity, redacted preview, element hints, nearest heading, visibility state, source rectangle, CSS path, local IP indicators when present, and a focus action for the source rectangle. The Threat Timeline adds scan chronology and severity filters so high/medium/low findings can be reviewed without losing the full local evidence context.
+Threat Screens in v0.3.7 add an optional evidence HUD next to the red Threat Radar decision HUD. Each screen shows the local finding category, risk/severity, redacted preview, element hints, nearest heading, visibility state, source rectangle, CSS path, local IP indicators when present, and a focus action for the source rectangle. The Threat Timeline adds scan chronology and severity filters so high/medium/low findings can be reviewed without losing the full local evidence context.
 
 Report to Chat is an explicit human-clicked escalation path. It sends a compact local evidence bundle to the selected AGNT chat, combines Threat Scan with available Cyber Snapshot and Context Radar state, captures viewport metadata without sending the image payload, and asks for a short classification: benign, suspicious, likely threat, or inconclusive. It does not prove compromise, fetch suspicious URLs, execute page code, or attribute an IP owner.
 

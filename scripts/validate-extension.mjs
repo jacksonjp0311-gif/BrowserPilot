@@ -143,13 +143,14 @@ for (const [label, extensionDir] of targets) {
   if ((label === 'edge' || label === 'chrome') && missingOptionalPermissions.length) {
     throw new Error(`[${label}] manifest missing Jarvis optional permissions: ${missingOptionalPermissions.join(', ')}`);
   }
-  const requiredJarvisPermissions = ['debugger', 'declarativeNetRequest', 'declarativeNetRequestWithHostAccess'];
   const requiredPermissions = new Set(manifest.permissions || []);
-  const missingRequiredJarvisPermissions = requiredJarvisPermissions.filter((perm) => !requiredPermissions.has(perm));
-  if ((label === 'edge' || label === 'chrome') && missingRequiredJarvisPermissions.length) {
-    throw new Error(`[${label}] manifest missing required Jarvis permissions: ${missingRequiredJarvisPermissions.join(', ')}`);
+  const labOnlyPermissions = ['debugger', 'declarativeNetRequest', 'declarativeNetRequestWithHostAccess'];
+  const presentLabOnlyPermissions = labOnlyPermissions.filter((perm) => requiredPermissions.has(perm));
+  if ((label === 'edge' || label === 'chrome') && presentLabOnlyPermissions.length) {
+    throw new Error(`[${label}] default manifest must not require lab-only permissions: ${presentLabOnlyPermissions.join(', ')}`);
   }
-  if ((label === 'edge' || label === 'chrome') && (!sidepanelHtml || !fs.readFileSync(path.join(extensionDir, 'options.js'), 'utf8').includes('JARVIS_OPTIONAL_PERMISSIONS'))) {
+  const optionsText = fs.readFileSync(path.join(extensionDir, 'options.js'), 'utf8');
+  if ((label === 'edge' || label === 'chrome') && (!sidepanelHtml || !optionsText.includes('JARVIS_OPTIONAL_PERMISSIONS') || !optionsText.includes('labOnly'))) {
     throw new Error(`[${label}] options.js must expose Jarvis permission matrix`);
   }
 

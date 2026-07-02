@@ -134,6 +134,25 @@ Mitigation:
 - Preserve redacted logs for high-risk actions.
 - Do not silently read cookies, scrape history, attach debugger, or use native messaging.
 
+### Manifest Permission Regression
+
+Symptoms:
+
+- Edge disables or destabilizes the extension immediately after reload.
+- The browser opens extension errors after a permission change.
+- The side panel no longer starts even though source validation passed.
+
+Likely causes:
+
+- A lab-only permission such as `debugger`, `declarativeNetRequest`, or `declarativeNetRequestWithHostAccess` was added to the default manifest.
+- A permission was declared before a user-facing action and rollback path existed.
+
+Mitigation:
+
+- Keep lab-only permissions out of default Edge/Chrome manifests.
+- Let Options describe lab-only capabilities without querying or requesting them.
+- Keep `npm run validate` blocking lab-only permissions from release manifests.
+
 ### Threat Signal Confusion
 
 Symptoms:

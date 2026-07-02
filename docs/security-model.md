@@ -90,7 +90,7 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 - Operator bridge: `notifications`, `alarms`, `clipboardRead`, `clipboardWrite`, `idle`.
 - High-risk lab/bridge: `cookies`, `debugger`, `nativeMessaging`, `identity`.
 
-Chrome does not allow `debugger` or declarative net request permissions to be requested as ordinary optional permissions, so BrowserPilot declares them in the manifest and treats their use as high-risk product behavior that still requires explicit operator action. High-risk permissions must stay behind explicit user actions and redacted logs. BrowserPilot must not silently extract cookie values, scrape history, attach the debugger, fetch suspicious URLs, bypass policy, or report anything without user action.
+Chrome does not allow `debugger` or declarative net request permissions to be requested as ordinary optional permissions. BrowserPilot therefore keeps them out of the default Edge/Chrome manifests and labels them lab-manifest-only in Options. A future lab build may declare them, but their use must still require explicit operator action. High-risk permissions must stay behind explicit user actions and redacted logs. BrowserPilot must not silently extract cookie values, scrape history, attach the debugger, fetch suspicious URLs, bypass policy, or report anything without user action.
 
 ## Modes (and what they mean)
 

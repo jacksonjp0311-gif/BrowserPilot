@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BrowserPilot for Edge",
-  "version": "0.3.7",
-  "version_name": "0.3.7 Jarvis Permission Matrix",
+  "version": "0.3.8",
+  "version_name": "0.3.8 Stable Jarvis Permissions",
   "description": "Let an AGNT agent understand and operate the Microsoft Edge tab you are already using.",
   "action": {
     "default_title": "BrowserPilot for Edge",
@@ -28,10 +28,7 @@
     "scripting",
     "sidePanel",
     "webNavigation",
-    "contextMenus",
-    "debugger",
-    "declarativeNetRequest",
-    "declarativeNetRequestWithHostAccess"
+    "contextMenus"
   ],
   "optional_permissions": [
     "alarms",

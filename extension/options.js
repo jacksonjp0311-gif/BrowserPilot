@@ -27,11 +27,11 @@ const JARVIS_OPTIONAL_PERMISSIONS = [
   { perm: 'sessions', group: 'workflow memory', risk: 'high', purpose: 'recover recently closed tabs/windows after user request' },
   { perm: 'bookmarks', group: 'research trails', risk: 'medium', purpose: 'save or retrieve user-approved evidence trails' },
   { perm: 'tabGroups', group: 'research trails', risk: 'medium', purpose: 'organize investigation tabs into named groups' },
-  { perm: 'declarativeNetRequest', group: 'threat lock', risk: 'high', purpose: 'future reversible local block rules', required: true },
-  { perm: 'declarativeNetRequestWithHostAccess', group: 'threat lock', risk: 'high', purpose: 'future host-aware local block rules', required: true },
+  { perm: 'declarativeNetRequest', group: 'threat lock', risk: 'high', purpose: 'future reversible local block rules', labOnly: true },
+  { perm: 'declarativeNetRequestWithHostAccess', group: 'threat lock', risk: 'high', purpose: 'future host-aware local block rules', labOnly: true },
   { perm: 'webRequest', group: 'network evidence', risk: 'high', purpose: 'metadata-only request observation; no content capture' },
   { perm: 'cookies', group: 'sensitive diagnostics', risk: 'very high', purpose: 'redacted login-state diagnostics only; no cookie value extraction' },
-  { perm: 'debugger', group: 'browser lab', risk: 'very high', purpose: 'deep inspection only after explicit advanced approval', required: true },
+  { perm: 'debugger', group: 'browser lab', risk: 'very high', purpose: 'deep inspection only after explicit advanced approval', labOnly: true },
   { perm: 'nativeMessaging', group: 'local bridge', risk: 'very high', purpose: 'future companion-app/sandbox bridge; separate setup required' },
   { perm: 'identity', group: 'account bridge', risk: 'high', purpose: 'future account/login bridge; not needed for local mode' },
   { perm: 'management', group: 'environment diagnostics', risk: 'high', purpose: 'inspect extension environment for support/debug flows' },
@@ -65,7 +65,7 @@ async function refreshPermissionsStatus() {
   if (!permStatusEl) return;
   permStatusEl.textContent = 'Checking…';
 
-  const optionalPerms = JARVIS_OPTIONAL_PERMISSIONS.map((item) => item.perm);
+  const optionalPerms = JARVIS_OPTIONAL_PERMISSIONS.filter((item) => !item.labOnly).map((item) => item.perm);
 
   const checks = await Promise.all(optionalPerms.map((p) => new Promise((resolve) => {
     chrome.permissions.contains({ permissions: [p] }, (ok) => {
@@ -88,9 +88,9 @@ async function refreshPermissionsStatus() {
       lines.push('');
       lines.push(`${currentGroup}:`);
     }
-    const ok = byPerm.get(item.perm);
+    const ok = item.labOnly ? false : byPerm.get(item.perm);
     const check = checks.find((entry) => entry.perm === item.perm);
-    const mode = item.required ? 'required declaration' : 'optional request';
+    const mode = item.labOnly ? 'lab manifest only' : 'optional request';
     lines.push(`- ${ok ? '[x]' : '[ ]'} ${item.perm} | ${mode} | ${item.risk} | ${item.purpose}${check?.error ? ` | ${check.error}` : ''}`);
   }
   lines.push('');
@@ -104,7 +104,7 @@ async function requestJarvisPermissions() {
   setPermBox('Requesting…');
   permStatusEl.textContent = 'Requesting…';
 
-  const permissions = JARVIS_OPTIONAL_PERMISSIONS.filter((item) => !item.required).map((item) => item.perm);
+  const permissions = JARVIS_OPTIONAL_PERMISSIONS.filter((item) => !item.labOnly).map((item) => item.perm);
 
   const ok = await new Promise((resolve) => {
     chrome.permissions.request({ permissions, origins: ['<all_urls>'] }, (granted) => {

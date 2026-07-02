@@ -147,9 +147,9 @@ IP addresses are network indicators only. They are not proof of attacker identit
 
 ## Network IOC Capture / Authority Report Package
 
-Network IOC Capture is optional and gated. BrowserPilot v0.3.3 generates local IOC/evidence packages only after a user-reviewed suspicious or likely threat flow.
+Network IOC Capture is optional and gated. BrowserPilot v0.3.4 generates local IOC/evidence packages only after a user-reviewed suspicious or likely threat flow.
 
-Threat Screens in v0.3.3 add an optional evidence HUD next to the red Threat Radar decision HUD. Each screen shows the local finding category, risk/severity, redacted preview, element hints, local IP indicators when present, and a focus action for the source rectangle.
+Threat Screens in v0.3.4 add an optional evidence HUD next to the red Threat Radar decision HUD. Each screen shows the local finding category, risk/severity, redacted preview, element hints, local IP indicators when present, and a focus action for the source rectangle. The Threat Timeline adds scan chronology and severity filters so high/medium/low findings can be reviewed without losing the full local evidence context.
 
 The Authority Report Package can include domains, URLs, extracted IP indicators, observed request IPs only if a future optional permission is enabled, redirect chains and timestamps when available, and the sandbox wipe certificate.
 

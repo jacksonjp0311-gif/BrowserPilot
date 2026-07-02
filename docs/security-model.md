@@ -44,6 +44,7 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 - It does not auto-send raw page data to AGNT.
 - Medium/high findings show a centered red HUD.
 - Threat Screens can be opened from the red HUD to inspect per-finding evidence cards, risk/severity, redacted previews, element hints, and local IP indicators.
+- Threat Timeline and severity filters help navigate local findings without changing the underlying report or risk score.
 - Threat Lock can block risky agent commands while preserving safe observation commands.
 - Findings are risk signals, not proof of malware.
 - Threat Screens are evidence-navigation aids, not malware proof or IP attribution.

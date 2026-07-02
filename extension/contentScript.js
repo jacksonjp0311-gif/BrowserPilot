@@ -1184,6 +1184,29 @@
     return (report.ipIndicators || []).slice(0, 3);
   }
 
+  function renderThreatTimeline(report) {
+    const findings = (report.findings || []).slice(0, 10);
+    const start = new Date(report.scannedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const rows = [
+      `<li><span>${escapeThreatHtml(start)}</span><strong>scan started</strong><em>${escapeThreatHtml(report.page?.origin || location.origin)}</em></li>`,
+      ...findings.map((finding, index) => {
+        const label = `${index + 1}. ${String(finding.category || 'finding').replace(/_/g, ' ')}`;
+        return `<li data-severity="${escapeThreatHtml(finding.severity || 'info')}"><span>+${index + 1}</span><strong>${escapeThreatHtml(label)}</strong><em>${escapeThreatHtml(String(finding.severity || 'info').toUpperCase())}</em></li>`;
+      }),
+      `<li><span>risk</span><strong>${escapeThreatHtml(String(report.risk?.level || 'low').toUpperCase())}</strong><em>score ${escapeThreatHtml(report.risk?.score ?? 0)}</em></li>`
+    ];
+    return `<ol class="threat-timeline">${rows.join('')}</ol>`;
+  }
+
+  function renderThreatSeverityFilters(report) {
+    const findings = report.findings || [];
+    const counts = ['all', 'high', 'medium', 'low', 'info'].map((severity) => {
+      const count = severity === 'all' ? findings.length : findings.filter((finding) => String(finding.severity || 'info') === severity).length;
+      return { severity, count };
+    }).filter((item) => item.severity === 'all' || item.count > 0);
+    return counts.map((item) => `<button class="filter ${item.severity === 'all' ? 'active' : ''}" data-action="filter-threats" data-severity="${escapeThreatHtml(item.severity)}">${escapeThreatHtml(item.severity.toUpperCase())} ${item.count}</button>`).join('');
+  }
+
   function renderThreatEvidenceCards(report) {
     const findings = (report.findings || []).slice(0, 12);
     if (!findings.length) {
@@ -1197,7 +1220,7 @@
       const hints = finding.selectorHints || {};
       const title = `${index + 1}. ${String(finding.category || 'finding').replace(/_/g, ' ')}`;
       return `
-        <article class="threat-evidence-card" data-finding-id="${escapeThreatHtml(finding.id)}">
+        <article class="threat-evidence-card" data-finding-id="${escapeThreatHtml(finding.id)}" data-severity="${escapeThreatHtml(finding.severity || 'info')}">
           <header>
             <strong>${escapeThreatHtml(title)}</strong>
             <span class="sev ${escapeThreatHtml(finding.severity || 'info')}">${escapeThreatHtml(String(finding.severity || 'info').toUpperCase())}</span>
@@ -1285,6 +1308,10 @@
           </div>
           <button data-action="close-evidence" title="Close evidence HUD">x</button>
         </div>
+        <div class="threat-evidence-tools">
+          <div class="filters">${renderThreatSeverityFilters(report)}</div>
+          ${renderThreatTimeline(report)}
+        </div>
         <div class="threat-evidence-grid">${renderThreatEvidenceCards(report)}</div>
         <p class="threat-evidence-note">Local DOM evidence only. IP indicators are infrastructure signals, not identity or attribution.</p>
       </aside>`;
@@ -1309,8 +1336,15 @@
       #browserpilot-threat-root .threat-evidence-head h3{margin:0;color:#fff0bb;letter-spacing:.13em;font-size:13px}
       #browserpilot-threat-root .threat-evidence-head p{margin:5px 0 0;font-size:12px;color:rgba(255,255,255,.72)}
       #browserpilot-threat-root .threat-evidence-head button{width:32px;height:30px;padding:0}
+      #browserpilot-threat-root .threat-evidence-tools{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:grid;gap:10px}
+      #browserpilot-threat-root .filters{display:flex;flex-wrap:wrap;gap:6px}
+      #browserpilot-threat-root .filters .filter{font-size:11px;padding:6px 8px;border-radius:999px}.filters .filter.active{border-color:rgba(255,223,107,.72);background:rgba(255,223,107,.16)}
+      #browserpilot-threat-root .threat-timeline{margin:0;padding:0;list-style:none;display:grid;gap:5px;max-height:120px;overflow:auto}
+      #browserpilot-threat-root .threat-timeline li{display:grid;grid-template-columns:48px 1fr auto;gap:7px;align-items:center;border-left:2px solid rgba(255,223,107,.42);padding:4px 0 4px 8px;font-size:11px}
+      #browserpilot-threat-root .threat-timeline span{color:#9fe7ff;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}#browserpilot-threat-root .threat-timeline strong{color:rgba(255,255,255,.86);font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#browserpilot-threat-root .threat-timeline em{font-style:normal;color:rgba(255,255,255,.55)}
       #browserpilot-threat-root .threat-evidence-grid{padding:12px;overflow:auto;display:grid;gap:10px}
       #browserpilot-threat-root .threat-evidence-card{border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.045);padding:11px}
+      #browserpilot-threat-root .threat-evidence-card.filtered-out{display:none}
       #browserpilot-threat-root .threat-evidence-card header{display:flex;align-items:center;justify-content:space-between;gap:8px}
       #browserpilot-threat-root .threat-evidence-card strong{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#fff}
       #browserpilot-threat-root .threat-evidence-card .sev{font-size:10px;border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:3px 7px;color:#fff}
@@ -1331,6 +1365,17 @@
       if (action === 'evidence') { root.classList.add('show-evidence'); return; }
       if (action === 'close-evidence') { root.classList.remove('show-evidence'); return; }
       if (action === 'focus-finding') { focusThreatFinding(report, e.target?.dataset?.findingId || ''); return; }
+      if (action === 'filter-threats') {
+        const severity = e.target?.dataset?.severity || 'all';
+        root.querySelectorAll('.filters .filter').forEach((btn) => btn.classList.toggle('active', btn === e.target));
+        root.querySelectorAll('.threat-evidence-card').forEach((card) => {
+          card.classList.toggle('filtered-out', severity !== 'all' && card.dataset.severity !== severity);
+        });
+        root.querySelectorAll('.threat-timeline li[data-severity]').forEach((row) => {
+          row.style.display = severity === 'all' || row.dataset.severity === severity ? '' : 'none';
+        });
+        return;
+      }
       if (action === 'ack') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_THREAT_HUD_ACKNOWLEDGED', report }).catch(() => {});
       if (action === 'sandbox') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_THREAT_HUD_SEND_TO_SANDBOX', report }).catch(() => {});
       if (action === 'block') chrome.runtime.sendMessage({ type: 'BROWSERPILOT_THREAT_HUD_BLOCK_ACTIONS', report }).catch(() => {});

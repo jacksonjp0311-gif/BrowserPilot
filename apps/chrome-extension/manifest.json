@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BrowserPilot for Chrome",
-  "version": "0.3.3",
-  "version_name": "0.3.3 Threat Screens",
+  "version": "0.3.4",
+  "version_name": "0.3.4 Threat Timeline",
   "description": "Let an AGNT agent understand and operate the Chrome tab you are already using.",
   "minimum_chrome_version": "114",
   "action": {

@@ -21,7 +21,8 @@
     "docs/rehydration-protocol.md",
     "docs/failure-modes.md",
     "rcc/README.md",
-    "rcc/nexus/README.md"
+    "rcc/nexus/README.md",
+    "rcc/nexus/route_map.json"
   ],
   "routes": [
     {
@@ -31,22 +32,32 @@
     },
     {
       "surface": "edge_extension",
-      "paths": ["apps/edge-extension"],
+      "paths": ["apps/README.md", "apps/edge-extension", "apps/edge-extension/README.md"],
       "validation": ["npm run validate"]
     },
     {
       "surface": "chrome_extension",
-      "paths": ["apps/chrome-extension"],
+      "paths": ["apps/README.md", "apps/chrome-extension", "apps/chrome-extension/README.md"],
       "validation": ["npm run validate"]
     },
     {
       "surface": "legacy_extension",
-      "paths": ["extension"],
+      "paths": ["extension", "extension/README.md"],
       "validation": ["npm run validate"]
     },
     {
+      "surface": "agnt_plugins",
+      "paths": ["agnt-plugins/README.md", "agnt-plugins/symtorch-toolkit"],
+      "validation": ["npm run smoke:edgecopilot"]
+    },
+    {
+      "surface": "symtorch_policy",
+      "paths": ["symtorch/README.md", "symtorch/policies"],
+      "validation": ["npm run smoke:edgecopilot", "npm run validate"]
+    },
+    {
       "surface": "safety_model",
-      "paths": ["docs/security-model.md", "sandbox/threat-review", "docs/failure-modes.md"],
+      "paths": ["docs/security-model.md", "sandbox/README.md", "sandbox/threat-review", "docs/failure-modes.md"],
       "validation": ["npm run validate", "npm run validate:rcc"]
     },
     {
@@ -61,8 +72,23 @@
     },
     {
       "surface": "packaging",
-      "paths": ["scripts", "dist"],
+      "paths": ["scripts/README.md", "scripts", "dist"],
       "validation": ["npm run package:edge", "npm run package:chrome"]
+    },
+    {
+      "surface": "toolbox",
+      "paths": ["toolbox/README.md", "toolbox/skills/dom-audit-probe/README.md", "toolbox/skills/dom-audit-probe/probe.js"],
+      "validation": ["npm run validate"]
+    },
+    {
+      "surface": "manual_qa",
+      "paths": ["test-pages/README.md", "test-pages/context-radar-qa.html"],
+      "validation": ["manual browser QA"]
+    },
+    {
+      "surface": "reports",
+      "paths": ["reports/README.md", "reports/rcc_nexus"],
+      "validation": ["npm run validate:rcc"]
     }
   ]
 }

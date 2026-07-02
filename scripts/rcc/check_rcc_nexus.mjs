@@ -7,24 +7,44 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const requiredFiles = [
   'README.md',
   'README_90_SECONDS.md',
+  'agnt-plugins/README.md',
+  'apps/README.md',
+  'apps/edge-extension/README.md',
+  'apps/chrome-extension/README.md',
   'docs/README.md',
   'docs/rcc-nexus.md',
   'docs/rehydration-protocol.md',
   'docs/failure-modes.md',
+  'extension/README.md',
   'rcc/README.md',
   'rcc/nexus/README.md',
   'rcc/nexus/route_map.json',
-  'reports/rcc_nexus/.gitkeep'
+  'reports/README.md',
+  'reports/rcc_nexus/.gitkeep',
+  'sandbox/README.md',
+  'scripts/README.md',
+  'symtorch/README.md',
+  'test-pages/README.md',
+  'toolbox/README.md',
+  'toolbox/skills/dom-audit-probe/README.md'
 ];
 
 const requiredPhrases = new Map([
-  ['README.md', ['Human README', 'AI Agent README', 'RCC Nexus', 'Rehydration Protocol']],
+  ['README.md', ['# PART I - Human README', '# PART II - RCC Nexus README', '# PART III - AI Agent README', '# PART IV - Rehydration Protocol']],
   ['README_90_SECONDS.md', ['npm run validate', 'npm run validate:rcc', 'No validation, no completion claim']],
+  ['apps/README.md', ['## S - Specification', '## RCC Nexus Echo Location', 'Extension reload behavior must be runtime-checked']],
+  ['apps/edge-extension/README.md', ['## S - Specification', '## RCC Nexus Echo Location', 'manual Edge verification remains required']],
+  ['apps/chrome-extension/README.md', ['## S - Specification', '## RCC Nexus Echo Location', 'manual Chrome verification remains required']],
+  ['docs/README.md', ['## S - Specification', '## RCC Nexus Echo Location', 'Local Documentation Index']],
   ['docs/rcc-nexus.md', ['navigation is not validation', 'Threat Scan', 'Cyber Snapshot', 'Context Radar']],
   ['docs/rehydration-protocol.md', ['The geometry must align before the output can compound', 'No validation, no completion claim']],
   ['docs/failure-modes.md', ['Side Panel Open Failure', 'Receiving End Does Not Exist', 'Threat Signal Confusion']],
   ['rcc/README.md', ['navigation_is_not_validation', 'validation_remains_required']],
-  ['rcc/nexus/README.md', ['Agent Route', 'Update Obligation']]
+  ['rcc/nexus/README.md', ['Agent Route', 'Update Obligation']],
+  ['scripts/README.md', ['## S - Specification', '## RCC Nexus Echo Location']],
+  ['sandbox/README.md', ['## S - Specification', '## RCC Nexus Echo Location']],
+  ['symtorch/README.md', ['## S - Specification', '## RCC Nexus Echo Location']],
+  ['toolbox/README.md', ['## S - Specification', '## RCC Nexus Echo Location']]
 ]);
 
 const findings = [];

@@ -13,36 +13,6 @@ BrowserPilot is a **local-first browser-agent bridge** for **AGNT** and **Hermes
 AGNT_EXEC: [{"kind":"navigate","url":"https://example.com"},{"kind":"click","css":"button#login"}]
 ```
 
-## README Route Surfaces
-
-BrowserPilot now uses four README surfaces so humans and agents can re-enter the repo without losing the current feature map.
-
-### Human README
-
-This root README is the human operator surface. It explains the extension, install path, visible controls, safety boundaries, screenshots, and packaging flow.
-
-### AI Agent README
-
-[`README_90_SECONDS.md`](README_90_SECONDS.md) is the quick rehydration surface. It gives agents and returning maintainers the read order, validation commands, and durable-change boundary before they edit.
-
-### RCC Nexus
-
-[`docs/rcc-nexus.md`](docs/rcc-nexus.md), [`rcc/README.md`](rcc/README.md), and [`rcc/nexus/README.md`](rcc/nexus/README.md) define the BrowserPilot route map, Echo Location, evidence surfaces, and non-claim locks.
-
-RCC tells the agent what the repository means. RCC Nexus tells the agent where it is. Validation tells the agent whether reality agreed.
-
-### Rehydration Protocol
-
-[`docs/rehydration-protocol.md`](docs/rehydration-protocol.md) is the resume protocol for stale sessions, cross-repo syncs, release packaging, and push claims.
-
-```text
-anchor -> load repo origin -> measure drift -> rehydrate -> validate -> compound
-```
-
-No origin alignment, no durable mutation. No validation, no completion claim.
-
-Related risk map: [`docs/failure-modes.md`](docs/failure-modes.md).
-
 ## ✨ New: Edge Copilot (AGNT + SymTorch) 🛡️🧠
 
 BrowserPilot now supports a **3‑state control mode**:
@@ -420,6 +390,121 @@ BrowserPilot is powerful:
 - **Edge Copilot** adds an additional guardrail: **policy evaluation**.
 
 See: `docs/security-model.md`.
+
+---
+
+# PART I - Human README
+
+## Human Director Box
+
+BrowserPilot is the human-facing browser-agent cockpit. Keep the top of this README readable for operators first: what it does, how to install it, what the buttons mean, what it will not do, and how to validate it.
+
+Current human route:
+
+1. Install the Edge or Chrome extension from `apps/edge-extension` or `apps/chrome-extension`.
+2. Configure AGNT or Hermes in Options.
+3. Use the side panel for chat, Threat Scan, Cyber Snapshot, Context Radar, Scan Report, Extract IP Address, and AGNT Chat.
+4. Treat Threat Scan findings as local risk signals, not malware proof.
+5. Treat extracted IPs as indicators, not attacker identity.
+
+Human-first boundary:
+
+- The agent may propose browser work, but the operator owns capture, reporting, risky actions, and release claims.
+- BrowserPilot is powerful local software. It should stay explicit, inspectable, and bounded.
+
+# PART II - RCC Nexus README
+
+## RCC Nexus Identity
+
+BrowserPilot includes a lightweight RCC Nexus layer adapted from the Observable Manifold Network pattern.
+
+RCC tells the agent what the repository means.
+RCC Nexus tells the agent where it is.
+Validation tells the agent whether reality agreed.
+
+Primary Nexus files:
+
+- [`docs/rcc-nexus.md`](docs/rcc-nexus.md)
+- [`rcc/README.md`](rcc/README.md)
+- [`rcc/nexus/README.md`](rcc/nexus/README.md)
+- [`rcc/nexus/route_map.json`](rcc/nexus/route_map.json)
+
+Nexus route:
+
+```text
+Human README -> RCC Nexus README -> AI Agent README -> route map -> Echo Location -> validation
+```
+
+Nexus validation:
+
+```powershell
+npm run validate:rcc
+```
+
+Nexus non-claim lock:
+
+- Navigation is not validation.
+- Documentation is not correctness.
+- Route maps are not runtime proof.
+- Context reconstruction is not code quality.
+- Threat signals are not malware proof.
+- IP indicators are not attacker identity.
+
+# PART III - AI Agent README
+
+## AI Operating Contract
+
+AI agents working in BrowserPilot should use this read order:
+
+1. `README.md`
+2. `README_90_SECONDS.md`
+3. `docs/README.md`
+4. `docs/rcc-nexus.md`
+5. `docs/rehydration-protocol.md`
+6. `docs/failure-modes.md`
+7. `rcc/nexus/route_map.json`
+8. The mini README inside the folder being edited
+
+AI routing guide:
+
+| Work area | Start here | Validation |
+| --- | --- | --- |
+| Edge runtime | `apps/edge-extension/README.md` | `npm run validate` |
+| Chrome runtime | `apps/chrome-extension/README.md` | `npm run validate` |
+| Shared docs/safety | `docs/README.md` | `npm run validate:rcc` |
+| Packaging/scripts | `scripts/README.md` | relevant `npm run package:*` |
+| RCC route changes | `rcc/nexus/README.md` | `npm run validate:rcc` |
+| Sandbox review | `sandbox/README.md` | static runner smoke test when changed |
+
+AI completion rule:
+
+- Do not claim done without validation output.
+- Do not edit one browser adapter and forget parity unless divergence is intentional.
+- Do not promote documentation claims beyond implemented code.
+
+# PART IV - Rehydration Protocol
+
+## BrowserPilot Rehydration
+
+Rehydration is the resume protocol for stale sessions, cross-repo syncs, extension reload failures, and release claims.
+
+```text
+anchor -> load repo origin -> measure drift -> rehydrate -> validate -> compound
+```
+
+Primary protocol file:
+
+- [`docs/rehydration-protocol.md`](docs/rehydration-protocol.md)
+
+Failure-mode map:
+
+- [`docs/failure-modes.md`](docs/failure-modes.md)
+
+Compounding gate:
+
+- No origin alignment, no durable mutation.
+- No validation, no completion claim.
+- No extension reload or manual runtime check, no browser-runtime certainty claim.
 
 ---
 

@@ -135,8 +135,7 @@ for (const [label, extensionDir] of targets) {
     'privacy',
     'desktopCapture',
     'pageCapture',
-    'idle',
-    'unlimitedStorage'
+    'idle'
   ];
   const optionalPermissions = new Set(manifest.optional_permissions || []);
   const missingOptionalPermissions = requiredOptionalPermissions.filter((perm) => !optionalPermissions.has(perm));
@@ -144,7 +143,12 @@ for (const [label, extensionDir] of targets) {
     throw new Error(`[${label}] manifest missing Jarvis optional permissions: ${missingOptionalPermissions.join(', ')}`);
   }
   const requiredPermissions = new Set(manifest.permissions || []);
-  const labOnlyPermissions = ['debugger', 'declarativeNetRequest', 'declarativeNetRequestWithHostAccess'];
+  const invalidOptionalPermissions = ['unlimitedStorage'];
+  const presentInvalidOptionalPermissions = invalidOptionalPermissions.filter((perm) => optionalPermissions.has(perm));
+  if ((label === 'edge' || label === 'chrome') && presentInvalidOptionalPermissions.length) {
+    throw new Error(`[${label}] default manifest must not list invalid optional permissions: ${presentInvalidOptionalPermissions.join(', ')}`);
+  }
+  const labOnlyPermissions = ['debugger', 'declarativeNetRequest', 'declarativeNetRequestWithHostAccess', 'unlimitedStorage'];
   const presentLabOnlyPermissions = labOnlyPermissions.filter((perm) => requiredPermissions.has(perm));
   if ((label === 'edge' || label === 'chrome') && presentLabOnlyPermissions.length) {
     throw new Error(`[${label}] default manifest must not require lab-only permissions: ${presentLabOnlyPermissions.join(', ')}`);

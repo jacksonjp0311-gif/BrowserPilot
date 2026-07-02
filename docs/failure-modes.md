@@ -144,7 +144,7 @@ Symptoms:
 
 Likely causes:
 
-- A lab-only permission such as `debugger`, `declarativeNetRequest`, or `declarativeNetRequestWithHostAccess` was added to the default manifest.
+- A lab-only permission such as `debugger`, `declarativeNetRequest`, `declarativeNetRequestWithHostAccess`, or `unlimitedStorage` was added to the default manifest.
 - A permission was declared before a user-facing action and rollback path existed.
 
 Mitigation:

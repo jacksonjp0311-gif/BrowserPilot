@@ -39,7 +39,7 @@ const JARVIS_OPTIONAL_PERMISSIONS = [
   { perm: 'contentSettings', group: 'privacy tools', risk: 'high', purpose: 'future explicit site-setting diagnostics and repair prompts' },
   { perm: 'privacy', group: 'privacy tools', risk: 'high', purpose: 'future read-only privacy-setting diagnostics' },
   { perm: 'idle', group: 'operator state', risk: 'medium', purpose: 'detect operator idle state before long-running local flows' },
-  { perm: 'unlimitedStorage', group: 'local vault', risk: 'medium', purpose: 'larger local report vaults and evidence archives' },
+  { perm: 'unlimitedStorage', group: 'local vault', risk: 'medium', purpose: 'larger local report vaults and evidence archives', labOnly: true },
   { perm: 'desktopCapture', group: 'capture', risk: 'high', purpose: 'explicit screen capture prompt only' },
   { perm: 'tabCapture', group: 'capture', risk: 'high', purpose: 'explicit tab capture prompt only' },
   { perm: 'offscreen', group: 'capture', risk: 'medium', purpose: 'offscreen document support for bounded capture/audio tasks' }

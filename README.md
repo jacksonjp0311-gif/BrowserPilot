@@ -62,9 +62,9 @@ Current stability rules:
 
 ## Jarvis Permission Matrix
 
-BrowserPilot v0.3.8 keeps the Jarvis permission matrix while returning the default Edge and Chrome builds to stable runtime permissions. Most surfaces are optional capabilities, not silent behavior. Chrome requires `debugger` and declarative net request permissions to be manifest declarations rather than runtime optional requests, so BrowserPilot now marks those as lab-manifest-only instead of requiring them in the normal user build.
+BrowserPilot v0.3.9 keeps the Jarvis permission matrix while returning the default Edge and Chrome builds to stable runtime permissions. Most surfaces are optional capabilities, not silent behavior. Chrome requires `debugger` and declarative net request permissions to be manifest declarations rather than runtime optional requests, and Edge rejects `unlimitedStorage` as an optional permission, so BrowserPilot now marks those as lab-manifest-only instead of requiring or requesting them in the normal user build.
 
-Added advanced optional surfaces include recent workflow recovery (`history`, `sessions`, `topSites`), evidence trails (`bookmarks`, `tabGroups`), local threat-lock/network surfaces (`webRequest`; DNR remains lab-manifest-only), privacy/browser diagnostics (`browsingData`, `privacy`, `contentSettings`, `management`), capture surfaces (`desktopCapture`, `pageCapture`, `tabCapture`, `offscreen`), and explicitly high-risk lab/bridge surfaces (`cookies`, `nativeMessaging`, `identity`; debugger remains lab-manifest-only).
+Added advanced optional surfaces include recent workflow recovery (`history`, `sessions`, `topSites`), evidence trails (`bookmarks`, `tabGroups`), local threat-lock/network surfaces (`webRequest`; DNR remains lab-manifest-only), privacy/browser diagnostics (`browsingData`, `privacy`, `contentSettings`, `management`), capture surfaces (`desktopCapture`, `pageCapture`, `tabCapture`, `offscreen`), and explicitly high-risk lab/bridge surfaces (`cookies`, `nativeMessaging`, `identity`; debugger and unlimited local vault storage remain lab-manifest-only).
 
 High-risk permissions must remain tied to explicit user actions and redacted operator logs. They do not permit silent cookie extraction, silent scraping, debugger attachment, native bridge calls, autonomous reporting, suspicious URL fetching, or IP attribution.
 

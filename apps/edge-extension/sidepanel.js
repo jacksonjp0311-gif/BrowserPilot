@@ -29,6 +29,7 @@ const els = {
 const STATE_KEY = 'agnt_sidepanel_state_v1';
 const DEFAULT_BRIDGE_CONVERSATION_KEY = 'browserpilot-edge-tab-operator';
 const CHAT_SYNC_TIMEOUT_MS = 90000;
+const LOCAL_DEFAULT_AGENT_ID = 'browserpilot-local-edge-tab-operator';
 
 const pending = new Map(); // requestId -> { wrap, body, idx }
 
@@ -54,6 +55,25 @@ let lastThreatReview = null;
 let lastAuthorityReport = null;
 let lastExtractedIps = null;
 let _activityTimer = null;
+
+function isLocalDefaultAgentId(agentId = selectedAgentId) {
+  return String(agentId || '') === LOCAL_DEFAULT_AGENT_ID;
+}
+
+function makeLocalDefaultAgent(reason = '') {
+  return {
+    id: LOCAL_DEFAULT_AGENT_ID,
+    name: 'Edge Tab Operator',
+    description: reason
+      ? `Local fallback selected. Backend auth required: ${reason}`
+      : 'Local fallback selected. Backend auth required before chat can sync.',
+    provider: 'BrowserPilot',
+    model: 'local fallback',
+    status: 'auth_required',
+    assignedTools: [],
+    localOnly: true
+  };
+}
 
 function setPanelActivity(active = true, holdMs = 900) {
   document.body.classList.toggle('bp-working', Boolean(active));
@@ -373,7 +393,7 @@ function setSelectedAgent(agent) {
   selectedAgentId = agent?.id || '';
   selectedAgentName = agent?.name || '';
   els.agentSearch.value = agent ? agent.name : '';
-  bg({ type: 'AGNT_SET_SETTINGS', settings: { selectedAgentId } }).catch(() => {});
+  bg({ type: 'AGNT_SET_SETTINGS', settings: { selectedAgentId: isLocalDefaultAgentId(selectedAgentId) ? '' : selectedAgentId } }).catch(() => {});
   closeList();
 }
 
@@ -436,11 +456,19 @@ async function ensureAndLoadAgents() {
 
   const res = await bg({ type: 'AGNT_ENSURE_DEFAULT_AGENT' });
   if (!res?.ok) {
-    const detail = res?.details ? `\n\nDetails: ${JSON.stringify(res.details).slice(0, 800)}` : '';
-    throw new Error((res?.error || 'Failed to load agents') + detail);
+    const reason = res?.error || 'Failed to load agents';
+    agents = [makeLocalDefaultAgent(reason)];
+    setSelectedAgent(agents[0]);
+    renderAgentList();
+    setHeaderStatus('auth');
+    setError(`${reason}\n\nSelected local Edge Tab Operator fallback. Open Options -> Test connection to validate base URL + token before chat sync.`);
+    return;
   }
 
   agents = normalizeAgentList(res.agents || res);
+  if (!agents.length) {
+    agents = [makeLocalDefaultAgent('AGNT returned no agents')];
+  }
 
   const s = await bg({ type: 'AGNT_GET_SETTINGS' });
   const saved = s?.settings?.selectedAgentId;
@@ -615,6 +643,10 @@ async function maybeExecuteJarvisFromText(text) {
 
 async function sendMessage(text) {
   if (!selectedAgentId) throw new Error('No agent selected.');
+  if (isLocalDefaultAgentId()) {
+    els.input.value = text;
+    throw new Error('Edge Tab Operator is in local fallback mode because AGNT auth/base URL is not connected. Open Options -> Test connection, then press Refresh.');
+  }
   setPanelActivity(true, CHAT_SYNC_TIMEOUT_MS);
 
   const history = chatLog

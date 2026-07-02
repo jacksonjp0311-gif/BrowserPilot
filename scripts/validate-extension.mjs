@@ -107,6 +107,9 @@ for (const [label, extensionDir] of targets) {
   if (!backgroundText.includes('function normalizeAgentList') || !backgroundText.includes('agents: normalizeAgentList')) {
     throw new Error(`[${label}] background.js must normalize AGNT agent list responses`);
   }
+  if (!sidepanelText.includes('LOCAL_DEFAULT_AGENT_ID') || !sidepanelText.includes('makeLocalDefaultAgent')) {
+    throw new Error(`[${label}] sidepanel.js must expose the local default agent fallback`);
+  }
 
   if (manifest.manifest_version !== 3) {
     throw new Error(`[${label}] manifest_version must be 3`);

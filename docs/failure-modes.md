@@ -64,6 +64,7 @@ Symptoms:
 
 - Side panel reports `agents.slice is not a function`, `agents.filter is not a function`, or the default agent is missing.
 - Agent search is blank even though AGNT has agents.
+- Agent search stays on `No agents yet -- creating a default agent...` while the header says `auth needed`.
 
 Likely causes:
 
@@ -73,6 +74,7 @@ Mitigation:
 
 - Normalize agent-list responses in the background worker and side panel.
 - Ensure the default `Edge Tab Operator` path returns an array after create or lookup.
+- If AGNT auth/base URL fails, show the local `Edge Tab Operator` fallback so page-local tools stay oriented while chat sync waits for Options repair.
 - Keep `npm run validate` checking for response normalization helpers.
 
 ### Floating Button Is Not Persistent

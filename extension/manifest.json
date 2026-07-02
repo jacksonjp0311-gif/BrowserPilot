@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BrowserPilot",
-  "version": "0.3.2",
-  "version_name": "0.3.2 Runtime Rehydration",
+  "version": "0.3.3",
+  "version_name": "0.3.3 Threat Screens",
   "description": "Let an AGNT agent understand and operate the browser tab you are already using.",
   "action": {
     "default_title": "BrowserPilot",

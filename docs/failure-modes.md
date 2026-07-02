@@ -99,6 +99,7 @@ Mitigation:
 Symptoms:
 
 - User sees `Threat Signal Detected` and assumes confirmed malware.
+- User sees Threat Screens and assumes a finding card proves attacker identity.
 
 Likely causes:
 
@@ -109,6 +110,8 @@ Mitigation:
 - Keep copy as "risk signals" and "findings."
 - Preserve non-claim language in Threat Radar and reports.
 - Do not fetch suspicious URLs or execute page scripts.
+- Keep Threat Screens redacted and local-only.
+- Keep IP indicators framed as infrastructure signals, not attribution.
 
 ### IP Attribution Drift
 

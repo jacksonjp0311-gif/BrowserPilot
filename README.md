@@ -150,9 +150,21 @@ Threat Lock gates risky agent actions when a high-risk report is active. Safe ob
 
 ## Threat Review Sandbox
 
-Threat Review is human-approved. BrowserPilot inserts a redacted review prompt into the composer only after the user clicks Send to Chat Sandbox.
+Threat Review is human-approved. BrowserPilot v0.4.0 can send an approved redacted threat report to the local Threat Review Helper, run the static sandbox runner, ingest `browserpilot.threatReviewResult.v1`, display the verdict and wipe certificate, update Threat Lock, show rule candidates, and write local ledger events.
 
-The repo includes a static runner:
+Start the local helper before using the real sandbox path:
+
+```powershell
+npm run sandbox:helper
+```
+
+The helper listens on localhost only:
+
+```text
+http://127.0.0.1:8791/threat-review
+```
+
+The repo also includes the static runner directly:
 
 ```powershell
 python sandbox/threat-review/threat_review_runner.py .\approved-threat-review-request.json
@@ -167,6 +179,7 @@ Security model:
 - Raw evidence is not retained by default
 - Final report includes a wipe certificate based on directory deletion verification
 - Rule candidates are suggestions only and are not installed automatically
+- If the helper is not running, BrowserPilot shows a local error and does not silently fall back to unsafe execution
 
 ## Extract IP Address
 

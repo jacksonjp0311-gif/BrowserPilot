@@ -28,6 +28,7 @@ const els = {
 };
 
 const STATE_KEY = 'agnt_sidepanel_state_v1';
+const LEDGER_KEY = 'browserpilot_evidence_ledger_v1';
 const DEFAULT_BRIDGE_CONVERSATION_KEY = 'browserpilot-edge-tab-operator';
 const CHAT_SYNC_TIMEOUT_MS = 90000;
 const LOCAL_DEFAULT_AGENT_ID = 'browserpilot-local-edge-tab-operator';
@@ -158,6 +159,36 @@ function renderJarvisBtn() {
   els.actBtn.title = title;
   els.actBtn.classList.remove('btnModeOn', 'btnModeOff', 'btnAccent');
   els.actBtn.classList.add(cls);
+}
+
+function hashLedgerText(text) {
+  let h = 2166136261;
+  const s = String(text || '');
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+async function appendLedgerEvent(eventType, data = {}) {
+  const event = {
+    eventId: `evt-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    eventType,
+    timestamp: new Date().toISOString(),
+    surface: 'side_panel',
+    reportId: data.reportId || lastThreatScan?.reportId || null,
+    risk: data.risk || lastThreatScan?.risk?.level || null,
+    ...data
+  };
+  event.hash = hashLedgerText(JSON.stringify(event));
+  try {
+    const current = await chrome.storage.local.get([LEDGER_KEY]);
+    const ledger = Array.isArray(current?.[LEDGER_KEY]) ? current[LEDGER_KEY] : [];
+    ledger.push(event);
+    await chrome.storage.local.set({ [LEDGER_KEY]: ledger.slice(-500) });
+  } catch {}
+  return event;
 }
 
 function renderWatchRegionBtn() {
@@ -1060,6 +1091,108 @@ function threatLifecycle(report, status = 'local_detected', userDecision = null)
   };
 }
 
+function buildThreatReviewRequest(report) {
+  const redacted = report || lastThreatScan;
+  if (!redacted) throw new Error('Run Threat Scan first.');
+  return {
+    schemaVersion: 'browserpilot.threatReviewRequest.v1',
+    report: redacted,
+    reviewMode: 'safe',
+    humanApproved: true,
+    options: {
+      allowNetwork: false,
+      includeScreenshot: false,
+      includeDomFragments: false,
+      includeIpIndicators: true,
+      timeoutMs: 30000
+    }
+  };
+}
+
+function applyThreatReviewResult(result) {
+  const verdict = String(result?.classification?.verdict || 'inconclusive').toLowerCase();
+  if (verdict === 'benign') threatLockActive = false;
+  else if (verdict === 'likely_threat') threatLockActive = true;
+  else threatLockActive = threatRiskLevel(lastThreatScan) === 'high' || isLikelyThreat(lastThreatScan);
+
+  if (lastThreatScan) {
+    lastThreatScan.lifecycle = {
+      ...(lastThreatScan.lifecycle || threatLifecycle(lastThreatScan)),
+      status: verdict === 'likely_threat' ? 'reviewed_likely_threat' : `reviewed_${verdict}`,
+      userDecision: 'sandbox_review_completed',
+      sandboxRunId: result?.runId || null,
+      lastUpdatedAt: new Date().toISOString()
+    };
+  }
+}
+
+function renderThreatReviewResult(result) {
+  const cls = result?.classification || {};
+  const policy = result?.recommendedPolicy || {};
+  const wipe = result?.wipe || {};
+  const rules = Array.isArray(result?.ruleCandidates) ? result.ruleCandidates : [];
+  const lines = [
+    '[threat review sandbox] completed',
+    `Verdict: ${String(cls.verdict || 'inconclusive').toUpperCase()} | Confidence: ${cls.confidence ?? 'n/a'}`,
+    `Threat types: ${(cls.threatTypes || []).join(', ') || 'none'}`,
+    `Mechanism: ${result?.mechanism?.whatItIs || 'static review of redacted threat signals'}`,
+    `Recommended policy: ${policy.action || 'warn'}`,
+    `Blocked commands: ${(policy.blockedCommands || []).join(', ') || 'none'}`,
+    `Allowed commands: ${(policy.allowedCommands || []).join(', ') || 'none'}`,
+    `Wipe certificate: attempted=${Boolean(wipe.attempted)} deleted=${Boolean(wipe.deleted)} remainingFiles=${wipe.remainingFiles ?? 'n/a'}`,
+    `Rule candidates: ${rules.length}`,
+    rules.slice(0, 6).map((rule, index) => `  ${index + 1}. ${rule.category || rule.name} -> ${rule.proposedAction} (${rule.confidence})`).join('\n'),
+    'Rule candidates are suggestions only and were not installed.'
+  ].filter(Boolean);
+  pushMsg('assistant', lines.join('\n'));
+}
+
+async function runThreatReviewSandbox(report) {
+  const redacted = report || lastThreatScan;
+  if (!redacted) throw new Error('Run Threat Scan first.');
+  redacted.lifecycle = { ...(redacted.lifecycle || threatLifecycle(redacted)), status: 'sandbox_requested', userDecision: 'send_to_sandbox', lastUpdatedAt: new Date().toISOString() };
+  lastThreatScan = redacted;
+  queueSaveState();
+
+  const request = buildThreatReviewRequest(redacted);
+  await appendLedgerEvent('sandbox_review_started', {
+    reportId: redacted.reportId || null,
+    risk: redacted.risk?.level || null,
+    decision: 'approved',
+    reason: 'trusted_side_panel_confirmation'
+  });
+  pushMsg('assistant', '[threat review sandbox] running local static review helper...');
+
+  const res = await bg({ type: 'BROWSERPILOT_RUN_THREAT_REVIEW', request });
+  if (!res?.ok) throw new Error(res?.error || 'Threat Review Sandbox failed');
+  lastThreatReview = res.result;
+  applyThreatReviewResult(res.result);
+  queueSaveState();
+  renderThreatReviewResult(res.result);
+  await appendLedgerEvent('sandbox_review_completed', {
+    reportId: redacted.reportId || null,
+    runId: res.result?.runId || null,
+    verdict: res.result?.classification?.verdict || null,
+    confidence: res.result?.classification?.confidence || null,
+    policyAction: res.result?.recommendedPolicy?.action || null,
+    wipeDeleted: res.result?.wipe?.deleted ?? null,
+    decision: res.result?.recommendedPolicy?.action || null
+  });
+  await appendLedgerEvent('sandbox_workspace_wiped', {
+    reportId: redacted.reportId || null,
+    runId: res.result?.runId || null,
+    decision: res.result?.wipe?.deleted ? 'verified_deleted' : 'wipe_incomplete',
+    reason: res.result?.wipe?.note || null
+  });
+  if ((res.result?.ruleCandidates || []).length) {
+    await appendLedgerEvent('rule_candidate_created', {
+      reportId: redacted.reportId || null,
+      count: res.result.ruleCandidates.length,
+      decision: 'display_only'
+    });
+  }
+}
+
 async function startThreatScan() {
   setError(null);
   const contextMode = threatScanContextMode || 'minimal';
@@ -1633,6 +1766,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     const report = msg.report || lastThreatScan;
     const level = threatRiskLevel(report);
     if (level === 'high' && !trustedSidePanelConfirm('Acknowledge high-risk warning', 'This records that you saw the warning. It will not unlock risky agent commands.')) return;
+    appendLedgerEvent('hud_acknowledged', { reportId: report?.reportId || null, risk: level, decision: 'acknowledged' }).catch(() => {});
     if (lastThreatScan) lastThreatScan.lifecycle = { ...(lastThreatScan.lifecycle || threatLifecycle(lastThreatScan)), status: level === 'high' ? 'acknowledged_locked' : 'acknowledged', userDecision: 'acknowledged', lastUpdatedAt: new Date().toISOString() };
     threatLockActive = level === 'high' || isLikelyThreat(report) ? true : false;
     queueSaveState();
@@ -1645,6 +1779,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     const report = msg.report || lastThreatScan;
     const level = threatRiskLevel(report);
     if ((level === 'high' || threatLockActive) && !trustedSidePanelConfirm('Disable Threat Lock / dismiss warning', 'High-risk or locked state is active. Dismiss will hide the warning, but high-risk Threat Lock remains active.')) return;
+    appendLedgerEvent('trusted_consent_approved', { reportId: report?.reportId || null, risk: level, decision: 'dismiss_requested' }).catch(() => {});
     if (lastThreatScan) lastThreatScan.lifecycle = { ...(lastThreatScan.lifecycle || threatLifecycle(lastThreatScan)), status: level === 'high' ? 'dismissed_locked' : 'dismissed', userDecision: 'dismissed', lastUpdatedAt: new Date().toISOString() };
     threatLockActive = level === 'high' || isLikelyThreat(report) ? true : false;
     queueSaveState();
@@ -1656,11 +1791,15 @@ chrome.runtime.onMessage.addListener((msg) => {
     if (lastThreatScan) lastThreatScan.lifecycle = { ...(lastThreatScan.lifecycle || threatLifecycle(lastThreatScan)), status: 'threat_lock', userDecision: 'block_actions', lastUpdatedAt: new Date().toISOString() };
     queueSaveState();
     pushMsg('assistant', '[threat lock] active. Risky agent browser actions are blocked pending review.');
+    appendLedgerEvent('command_blocked', { reportId: lastThreatScan?.reportId || null, decision: 'threat_lock_active', reason: 'user_block_actions' }).catch(() => {});
   }
 
   if (msg?.type === 'BROWSERPILOT_THREAT_HUD_SEND_TO_SANDBOX') {
-    if (!trustedSidePanelConfirm('Send to Chat Sandbox', 'A redacted local threat report will be inserted into the composer. No suspicious URLs are fetched by this action.')) return;
-    insertThreatReviewPrompt(msg.report || lastThreatScan);
+    if (!trustedSidePanelConfirm('Run Threat Review Sandbox', 'A redacted local threat report will be sent to the localhost sandbox helper. No suspicious URLs are fetched by this action.')) return;
+    runThreatReviewSandbox(msg.report || lastThreatScan).catch(e => {
+      setError(e.message + '\n\nStart the local helper with: npm run sandbox:helper');
+      appendLedgerEvent('sandbox_review_failed', { reportId: (msg.report || lastThreatScan)?.reportId || null, decision: 'failed', reason: e.message }).catch(() => {});
+    });
   }
 
   if (msg?.type === 'BROWSERPILOT_THREAT_REPORT_TO_CHAT') {

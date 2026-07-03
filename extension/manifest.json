@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BrowserPilot",
-  "version": "0.3.11",
-  "version_name": "0.3.11 Threat Hardening",
+  "version": "0.4.0",
+  "version_name": "0.4.0 Real Threat Review Sandbox",
   "description": "Let an AGNT agent understand and operate the browser tab you are already using.",
   "action": {
     "default_title": "BrowserPilot",
@@ -55,7 +55,9 @@
     "http://localhost:3333/*",
     "https://localhost:3333/*",
     "http://localhost:8642/*",
-    "https://localhost:8642/*"
+    "https://localhost:8642/*",
+    "http://127.0.0.1:8791/*",
+    "http://localhost:8791/*"
   ],
   "content_scripts": [
     {

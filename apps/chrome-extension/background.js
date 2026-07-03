@@ -72,6 +72,61 @@ function commandRiskScore(cmd = {}, pageContext = null) {
   return { risk, reason };
 }
 
+function isRiskyBrowserCommand(cmd = {}) {
+  const kind = String(cmd.kind || '').trim();
+  const safe = new Set(['wait', 'screenshot', 'domAudit', 'threatScan', 'contextRadar', 'cyberSnapshot', 'extractIp', 'exportReport']);
+  if (safe.has(kind)) return false;
+  return [
+    'click', 'type', 'attachImage', 'navigate', 'openTab', 'closeTab', 'submit', 'send',
+    'post', 'delete', 'upload', 'xComposeType', 'xComposeFocus', 'pressKey', 'select'
+  ].includes(kind);
+}
+
+function shouldBlockCommandByThreatState(cmd = {}, pageContext = null) {
+  if (!isRiskyBrowserCommand(cmd)) return { block: false };
+  const scan = pageContext?.threatScan || {};
+  const level = String(scan?.risk?.level || scan?.riskLevel || '').toLowerCase();
+  const recommended = String(scan?.recommendedAction || '').toLowerCase();
+  const lifecycle = String(scan?.lifecycle?.status || '').toLowerCase();
+  const lockedStatuses = ['threat_lock', 'acknowledged_locked', 'dismissed_locked', 'reviewed_likely_threat', 'likely_threat'];
+  if (level === 'high' || recommended === 'threat_lock' || lockedStatuses.includes(lifecycle)) {
+    return { block: true, reason: 'high_risk_threat_lock', level, recommended, lifecycle };
+  }
+  return { block: false };
+}
+
+function validateAgntExecCommand(cmd = {}) {
+  const kind = String(cmd.kind || '').trim();
+  const allowedKinds = new Set([
+    'wait', 'screenshot', 'domAudit', 'navigate', 'openTab', 'closeTab', 'scroll', 'click', 'type',
+    'pressKey', 'attachImage', 'xComposeFocus', 'xComposeType', 'submit', 'send', 'post', 'delete',
+    'upload', 'select', 'threatScan', 'contextRadar', 'cyberSnapshot', 'extractIp', 'exportReport'
+  ]);
+  if (!allowedKinds.has(kind)) return { ok: false, error: `Unknown AGNT_EXEC kind: ${kind || '(missing)'}` };
+  if (['navigate', 'openTab'].includes(kind)) {
+    let url;
+    try { url = new URL(String(cmd.url || '')); } catch { return { ok: false, error: `${kind} requires a valid absolute URL` }; }
+    if (!['http:', 'https:'].includes(url.protocol)) return { ok: false, error: `${kind} blocks non-http(s) URL schemes by default` };
+  }
+  if (['click', 'type', 'attachImage', 'select'].includes(kind)) {
+    const css = String(cmd.css || '');
+    if (!css || css.length > 500) return { ok: false, error: `${kind} requires a bounded css selector` };
+  }
+  if (['type', 'xComposeType'].includes(kind) && String(cmd.text || '').length > 4000) {
+    return { ok: false, error: `${kind} text exceeds 4000 characters` };
+  }
+  if (kind === 'attachImage') {
+    const dataUrl = String(cmd.dataUrl || '');
+    if (!/^data:image\/(?:png|jpeg|webp);base64,/i.test(dataUrl)) return { ok: false, error: 'attachImage requires a png/jpeg/webp data URL' };
+    if (dataUrl.length > 3_000_000) return { ok: false, error: 'attachImage data URL exceeds size cap' };
+  }
+  if (kind === 'pressKey') {
+    const allowedKeys = new Set(['Enter', 'Escape', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Delete', 'Home', 'End', 'PageUp', 'PageDown']);
+    if (!allowedKeys.has(String(cmd.key || ''))) return { ok: false, error: 'pressKey key is not in the allowed key set' };
+  }
+  return { ok: true };
+}
+
 async function evaluateEdgeCopilotPolicy(cmd, pageContext = null) {
   const { risk, reason } = commandRiskScore(cmd, pageContext);
   const facts = { risk, kind: String(cmd?.kind || ''), url: cmd?.url, css: cmd?.css, reason };
@@ -93,10 +148,38 @@ async function evaluateEdgeCopilotPolicy(cmd, pageContext = null) {
 
 // --- Telemetry ---
 const TELEMETRY_ENDPOINT = '/api/telemetry/browserpilot';
+const THREAT_REVIEW_HELPER_URL = 'http://127.0.0.1:8791/threat-review';
 async function recordTelemetry(eventType, data = {}) {
   try {
     await agntFetch(TELEMETRY_ENDPOINT, { method: 'POST', body: { eventType, adapter: 'edge', data, ts: new Date().toISOString() } });
   } catch { /* silent fail - telemetry should never break UX */ }
+}
+
+async function runThreatReviewSandbox(request) {
+  if (request?.schemaVersion !== 'browserpilot.threatReviewRequest.v1') {
+    throw new Error('Invalid threat review request schema.');
+  }
+  if (request?.humanApproved !== true) {
+    throw new Error('Threat review requires human approval.');
+  }
+  if (request?.options?.allowNetwork === true) {
+    throw new Error('Threat review sandbox refuses network-enabled requests by default.');
+  }
+  const res = await fetch(THREAT_REVIEW_HELPER_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request)
+  });
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); } catch { json = { _raw: text }; }
+  if (!res.ok || !json?.ok) {
+    throw new Error(json?.error || json?._raw || `Threat Review Helper failed: HTTP ${res.status}`);
+  }
+  if (json?.result?.schemaVersion !== 'browserpilot.threatReviewResult.v1') {
+    throw new Error('Threat Review Helper returned an invalid result schema.');
+  }
+  return json.result;
 }
 
 function tabSnapshot(tab = {}) {
@@ -484,6 +567,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const cmd = msg.command || {};
         const kind = cmd.kind;
         const edgeCopilot = Boolean(msg.edgeCopilot);
+        const schema = validateAgntExecCommand(cmd);
+        if (!schema.ok) {
+          await recordTelemetry('command_blocked', { tabId, kind, reason: 'schema_validation_failed', error: schema.error });
+          sendResponse({ ok: false, error: schema.error, schema });
+          return;
+        }
+        const threatGate = shouldBlockCommandByThreatState(cmd, msg.pageContext || null);
+        if (threatGate.block) {
+          await recordTelemetry('command_blocked', { tabId, kind, reason: threatGate.reason, threatGate });
+          sendResponse({ ok: false, error: 'Blocked by BrowserPilot Threat Lock', threatGate });
+          return;
+        }
         const policyBypass = Boolean(msg.policyBypass);
         const pageCtx = msg.pageContext || null;
 
@@ -535,6 +630,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       if (msg?.type === 'AGNT_TELEMETRY') { await recordTelemetry(msg.eventType || 'generic', msg.data || {}); sendResponse({ ok: true }); return; }
       if (msg?.type === 'AGNT_ANALYZE_TELEMETRY') { const data = await agntFetch('/api/telemetry/browserpilot/analyze', { method: 'POST', body: { limit: msg.limit || 200, context: msg.context || {} } }); sendResponse({ ok: true, data }); return; }
+      if (msg?.type === 'BROWSERPILOT_RUN_THREAT_REVIEW') {
+        const result = await runThreatReviewSandbox(msg.request || {});
+        await recordTelemetry('sandbox_review_completed', {
+          reportId: msg.request?.report?.reportId || null,
+          runId: result?.runId || null,
+          verdict: result?.classification?.verdict || null,
+          policyAction: result?.recommendedPolicy?.action || null,
+          wipeDeleted: result?.wipe?.deleted ?? null
+        });
+        sendResponse({ ok: true, result });
+        return;
+      }
       sendResponse({ ok: true, ignored: true });
     } catch (e) {
       sendResponse({ ok: false, error: e?.message || String(e) });

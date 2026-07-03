@@ -119,8 +119,17 @@ for (const [label, extensionDir] of targets) {
   if (!backgroundText.includes('function normalizeAgentList') || !backgroundText.includes('agents: normalizeAgentList')) {
     throw new Error(`[${label}] background.js must normalize AGNT agent list responses`);
   }
+  if ((label === 'edge' || label === 'chrome') && (!backgroundText.includes('BROWSERPILOT_RUN_THREAT_REVIEW') || !backgroundText.includes('runThreatReviewSandbox') || !backgroundText.includes('THREAT_REVIEW_HELPER_URL'))) {
+    throw new Error(`[${label}] background.js must route real Threat Review Sandbox requests`);
+  }
+  if ((label === 'edge' || label === 'chrome') && (!backgroundText.includes('shouldBlockCommandByThreatState') || !backgroundText.includes('validateAgntExecCommand'))) {
+    throw new Error(`[${label}] background.js must enforce Threat Lock and AGNT_EXEC schema validation`);
+  }
   if (!sidepanelText.includes('LOCAL_DEFAULT_AGENT_ID') || !sidepanelText.includes('makeLocalDefaultAgent')) {
     throw new Error(`[${label}] sidepanel.js must expose the local default agent fallback`);
+  }
+  if ((label === 'edge' || label === 'chrome') && (!sidepanelText.includes('buildThreatReviewRequest') || !sidepanelText.includes('renderThreatReviewResult') || !sidepanelText.includes('appendLedgerEvent') || !sidepanelText.includes('browserpilot_evidence_ledger_v1'))) {
+    throw new Error(`[${label}] sidepanel.js must ingest sandbox verdicts and ledger events`);
   }
 
   if (manifest.manifest_version !== 3) {
@@ -172,6 +181,9 @@ for (const [label, extensionDir] of targets) {
   if ((label === 'edge' || label === 'chrome') && (!sidepanelHtml || !optionsText.includes('JARVIS_OPTIONAL_PERMISSIONS') || !optionsText.includes('labOnly') || !optionsText.includes('advanced declared optional') || !optionsText.includes('declared optional'))) {
     throw new Error(`[${label}] options.js must expose Jarvis permission matrix`);
   }
+  if ((label === 'edge' || label === 'chrome') && !(manifest.host_permissions || []).includes('http://127.0.0.1:8791/*')) {
+    throw new Error(`[${label}] manifest must allow the local Threat Review Helper endpoint`);
+  }
 
   const qaPages = [
     'threat-radar-hidden-prompt.html',
@@ -189,6 +201,18 @@ for (const [label, extensionDir] of targets) {
     if (!fs.readFileSync(qaPath, 'utf8').includes('expected:')) {
       throw new Error(`[${label}] Threat Radar QA page lacks expected finding comment: ${page}`);
     }
+  }
+  const helperPath = path.join(root, 'scripts', 'threat-review-helper.mjs');
+  if (!fs.existsSync(helperPath)) {
+    throw new Error(`[${label}] Missing Threat Review helper script`);
+  }
+  const helperText = fs.readFileSync(helperPath, 'utf8');
+  if (!helperText.includes('/threat-review') || !helperText.includes('threat_review_runner.py')) {
+    throw new Error(`[${label}] Threat Review helper must expose the local runner endpoint`);
+  }
+  const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  if (!packageJson.scripts?.['sandbox:helper']) {
+    throw new Error(`[${label}] package.json must expose npm run sandbox:helper`);
   }
 
   console.log(`BrowserPilot ${label} extension validated: ${manifest.name} ${manifest.version}`);

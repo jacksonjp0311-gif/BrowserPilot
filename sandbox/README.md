@@ -33,11 +33,18 @@ Threat review basis:
 human approval -> redacted prompt -> static review -> local report -> wipe certificate
 ```
 
+Runtime helper path:
+
+```text
+trusted side-panel confirmation -> local helper -> threat_review_runner.py -> structured result -> Threat Lock update -> ledger event
+```
+
 ## I - Invariants
 
 - No suspicious URL fetching by default.
 - No page JavaScript execution.
 - No auto-send to AGNT.
+- Local helper binds to localhost only.
 - Python VENV is not a security boundary.
 - Static review is advisory, not malware proof.
 
@@ -46,6 +53,7 @@ human approval -> redacted prompt -> static review -> local report -> wipe certi
 Validation examples:
 
 ```powershell
+npm run sandbox:helper
 python sandbox/threat-review/threat_review_runner.py .\approved-threat-review-request.json
 ```
 
@@ -71,6 +79,7 @@ Evidence Surface:
 Validation Surface:
 
 ```powershell
+npm run sandbox:helper
 python sandbox/threat-review/threat_review_runner.py .\approved-threat-review-request.json
 ```
 

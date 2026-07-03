@@ -1,6 +1,6 @@
 {
   "name": "browser-pilot",
-  "version": "0.3.11",
+  "version": "0.4.0",
   "private": true,
   "description": "BrowserPilot lets agents operate the browser tab the user is already using.",
   "scripts": {
@@ -11,6 +11,7 @@
     "package:chrome": "powershell -ExecutionPolicy Bypass -File ./scripts/package-extension.ps1 -Browser chrome",
     "package:legacy": "powershell -ExecutionPolicy Bypass -File ./scripts/package-extension.ps1 -Browser legacy",
     "package:all": "npm run icons:gen && npm run package:edge && npm run package:chrome && npm run package:legacy",
-    "smoke:edgecopilot": "node ./scripts/smoke-edgecopilot.mjs"
+    "smoke:edgecopilot": "node ./scripts/smoke-edgecopilot.mjs",
+    "sandbox:helper": "node ./scripts/threat-review-helper.mjs"
   }
 }

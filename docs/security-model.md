@@ -74,12 +74,17 @@ BrowserPilot is local-first browser control. It should be treated as powerful so
 ## Threat Review Sandbox
 
 - Threat Review requires explicit human approval.
-- BrowserPilot can either insert a redacted review prompt into the composer or, when the user clicks Report to Chat, auto-send a compact review request to the selected AGNT chat.
+- BrowserPilot can send an approved redacted request to the local Threat Review Helper at `127.0.0.1:8791`.
+- The helper invokes `sandbox/threat-review/threat_review_runner.py`, returns `browserpilot.threatReviewResult.v1`, and verifies the runner workspace was deleted.
+- The side panel ingests verdict, confidence, recommended policy, rule candidates, and wipe certificate.
+- Sandbox verdicts update Threat Lock: benign can unlock normal operation; suspicious/inconclusive require caution; likely threat keeps Threat Lock active.
+- Rule candidates are displayed only and are not installed automatically.
 - Container/disposable isolation is preferred.
 - Python VENV fallback is not a security boundary.
 - Static review must not fetch suspicious URLs or execute page code.
 - Raw evidence is not retained by default.
 - Wipe certificates verify directory absence only; they are not forensic secure erase.
+- If the helper is not running, BrowserPilot fails closed for the real sandbox path and shows a local helper start command.
 
 ## Authority Reports
 
